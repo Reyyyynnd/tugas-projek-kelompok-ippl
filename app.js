@@ -1,0 +1,1233 @@
+/* app.js — satu file JavaScript untuk semua halaman (login, profil, beranda).
+   Halaman dipilih lewat atribut <body data-page="...">. */
+
+/* ===== BAGIAN BERSAMA ===== */
+const DB = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+
+const Auth = {
+  users() { return DB.get('lms_users', []); },
+  saveAll(list) { return DB.set('lms_users', list); },
+  find(email) { const e = String(email || '').trim().toLowerCase(); return this.users().find(u => u.email === e); },
+  session() { const e = DB.get('lms_session', null); return e ? this.find(e) : null; },
+  login(email) { DB.set('lms_session', email.trim().toLowerCase()); },
+  logout() { try { localStorage.removeItem('lms_session'); } catch (e) {} location.href = 'login.html'; },
+  update(email, patch) {
+    const list = this.users(), i = list.findIndex(u => u.email === email);
+    if (i < 0) return null;
+    Object.assign(list[i], patch);
+    this.saveAll(list);
+    return list[i];
+  },
+  // Mengganti Gmail: semua data yang memakai Gmail lama (sesi, kelas, progres, pelajaran) ikut dipindah.
+  // Status verifikasi direset karena Gmail baru belum diverifikasi.
+  changeEmail(oldE, newE) {
+    const list = this.users(), u = list.find(x => x.email === oldE);
+    if (!u) return false;
+    u.email = newE; u.verified = false; u.vcode = null; this.saveAll(list);
+    DB.set('lms_session', newE);
+    const jn = DB.get('lms_join', []); jn.forEach(j => { if (j.mhs === oldE) j.mhs = newE; }); DB.set('lms_join', jn);
+    const pr = DB.get('lms_prog', {}); Object.values(pr).forEach(m => { if (m[oldE]) { m[newE] = m[oldE]; delete m[oldE]; } }); DB.set('lms_prog', pr);
+    const mk = DB.get('lms_mk', []); mk.forEach(m => { if (m.dosen === oldE) m.dosen = newE; }); DB.set('lms_mk', mk);
+    return true;
+  },
+  // Hapus akun permanen. Pengajar: pelajaran, kelas, dan data partisipan di dalamnya ikut hilang. Partisipan: keluar dari semua kelas.
+  deleteAccount(email) {
+    const u = this.find(email); if (!u) return false;
+    const jn = DB.get('lms_join', []), pr = DB.get('lms_prog', {}); let mk = DB.get('lms_mk', []);
+    if (u.role === 'Pengajar') {
+      const ids = mk.filter(m => m.dosen === email).map(m => m.id);
+      ids.forEach(id => delete pr[id]);
+      DB.set('lms_mk', mk.filter(m => m.dosen !== email)); DB.set('lms_join', jn.filter(j => !ids.includes(j.mkId)));
+    } else {
+      DB.set('lms_join', jn.filter(j => j.mhs !== email));
+      Object.values(pr).forEach(m => { delete m[email]; });
+    }
+    DB.set('lms_prog', pr); this.saveAll(this.users().filter(x => x.email !== email));
+    try { localStorage.removeItem('lms_session'); } catch (e) {}
+    return true;
+  },
+  requireLogin() { const u = this.session(); if (!u) location.replace('login.html'); return u; },
+  async hash(pw) {
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw + ':lms-kampus'));
+      return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) { return btoa(unescape(encodeURIComponent(pw))); }
+  }
+};
+
+// Migrasi istilah lama untuk akun yang sudah ada: Dosen -> Pengajar, Mahasiswa -> Partisipan
+(function () {
+  const l = DB.get('lms_users', []); let ch = false;
+  l.forEach(u => { if (u.role === 'Dosen') { u.role = 'Pengajar'; ch = true; } else if (u.role === 'Mahasiswa') { u.role = 'Partisipan'; ch = true; } if ('kelas' in u) { delete u.kelas; ch = true; } });
+  if (ch) DB.set('lms_users', l);
+})();
+const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v).trim());
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(t) {
+  const e = document.createElement('div');
+  e.className = 'toast'; e.setAttribute('role', 'status'); e.textContent = t;
+  document.body.appendChild(e); setTimeout(() => e.remove(), 2400);
+}
+
+const PAGE=document.body.dataset.page;
+// Preferensi pengguna disimpan di data akunnya (u.pref): ukuran teks, pengingat
+const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, ...((u && u.pref) || {}) });
+function applyPref() { const u = Auth.session(); if (document.documentElement) document.documentElement.setAttribute('data-fs', prefOf(u).fs); }
+// Info pengguna di bilah atas: nama, lencana peran yang jelas, dan ID
+function setMe(u) {
+  const g = id => document.getElementById(id);
+  g('meAv').textContent = (u.nama || '?').charAt(0).toUpperCase();
+  g('meName').textContent = u.nama;
+  g('meSub').innerHTML = `<span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span><span class="idtxt">ID ${esc(u.id)}</span>`;
+}
+const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
+// Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, tautan memakai go() agar tidak memuat ulang halaman.
+function footerHtml() {
+  const nav = (v, l) => PAGE === 'beranda' ? `<button class="fl" onclick="go('${v}')">${l}</button>` : `<a class="fl" href="index.html#${v}">${l}</a>`;
+  return `<div class="fgrid">
+    <div><h4>Bantuan</h4>${nav('settings', 'Panduan singkat')}</div>
+    <div><h4>Hubungi kami</h4><a class="fl" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="fl" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
+  </div>
+  <div class="fbar"><span>© ${new Date().getFullYear()} KelasBelajar. Semua hak dilindungi.</span></div>`;
+}
+const $=s=>document.querySelector(s);
+
+/* ===== HALAMAN BERANDA, MATA KULIAH, PROGRES (pengajar & partisipan) ===== */
+const TOTAL = 16;
+const U = PAGE === 'beranda' ? (Auth.requireLogin() || { nama: '', id: '', role: '', prodi: '', email: '', verified: true }) : null;
+const isDosen = !!U && U.role === 'Pengajar';
+// view: home | courses | course (satu pelajaran) | kelas (satu kelas) | pert (pertemuan kelas) | progress | settings
+const S = { view: 'home', cid: null, kid: null, open: {}, edit: null, draft: {}, pf: null, pfKey: null };   // draft = lampiran tugas yang belum dikirim
+
+// Data: pelajaran -> kelas[] -> pert[] (pertemuan milik kelas). Keanggotaan & progres terpisah.
+const st = {
+  mk: () => DB.get('lms_mk', []), setMk: l => DB.set('lms_mk', l),
+  jn: () => DB.get('lms_join', []), setJn: l => DB.set('lms_join', l),
+  pr: () => DB.get('lms_prog', {}), setPr: p => DB.set('lms_prog', p)
+};
+const getMk = id => st.mk().find(m => m.id === id);
+const getKelas = (m, kid) => m && m.kelas.find(k => k.id === kid);
+const saveMk = m => { const l = st.mk(), i = l.findIndex(x => x.id === m.id); if (i < 0) l.push(m); else l[i] = m; return st.setMk(l); };
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function P(mkId, em) { const x = (st.pr()[mkId] || {})[em] || {}; return { att: x.att || {}, sub: x.sub || {}, quiz: x.quiz || {}, qt: x.qt || {}, nilai: x.nilai || {}, kembali: x.kembali || {}, qext: x.qext || {} }; }
+function setP(mkId, em, v) { const a = st.pr(); (a[mkId] = a[mkId] || {})[em] = v; return st.setPr(a); }
+const studentsOf = (mkId, kelasId) => st.jn().filter(j => j.mkId === mkId && (!kelasId || j.kelasId === kelasId)).map(j => Auth.find(j.mhs)).filter(Boolean);
+const myMk = () => isDosen ? st.mk().filter(m => m.dosen === U.email)
+  : st.jn().filter(j => j.mhs === U.email).map(j => getMk(j.mkId)).filter(Boolean);
+// kelas & pertemuan milik seorang partisipan
+const kelasOf = (m, em) => { const j = st.jn().find(q => q.mhs === em && q.mkId === m.id); return j ? getKelas(m, j.kelasId) : null; };
+const pertOf = (m, em) => { const k = kelasOf(m, em); return k ? k.pert : []; };
+const pertAt = (mkId, n, kid) => { const m = getMk(mkId); if (!m) return null; const k = kid ? getKelas(m, kid) : kelasOf(m, U.email); return k ? k.pert.find(x => x.n === n) : null; };
+const totalPert = m => m.kelas.reduce((a, k) => a + k.pert.length, 0);   // total pertemuan dari semua kelas
+const subName = v => typeof v === 'string' ? v : v.nama;
+const subAt = v => v && typeof v === 'object' ? v.at : null;
+// Pengumpulan lama (sebelum isi berkas disimpan) hanya punya nama berkas, sehingga tidak bisa dibuka pengajar
+// Satu pengumpulan bisa berisi beberapa lampiran (file atau link). Format lama (satu file) tetap terbaca.
+const itemsOf = f => !f || typeof f === 'string' ? [] : f.items ? f.items : (f.data ? [{ tipe: 'file', nama: f.nama, data: f.data }] : []);
+const legacyFile = f => !!f && itemsOf(f).length === 0;
+// Materi, instruksi tugas, dan instruksi quiz masing-masing bisa berisi sampai 5 lampiran (file atau link). Format lama tetap terbaca.
+const asList = v => !v ? [] : Array.isArray(v) ? v : [v];
+const fixTipe = it => it.tipe ? it : { ...it, tipe: 'file' };
+const matOf = x => asList(x.materi).map(fixTipe), tlOf = x => asList(x.tugasLamp || x.tugasFile).map(fixTipe), qlOf = x => asList(x.quizLamp).map(fixTipe);
+const adaQuiz = x => x.quiz.length > 0 || qlOf(x).length > 0;
+// Quiz selesai: soal sudah dikerjakan (jika ada soal) DAN quiz tautan/berkas sudah ditandai selesai atau dikirim hasilnya (jika ada)
+const quizDone = (p, x) => (!x.quiz.length || p.quiz[x.n] != null) && (!qlOf(x).length || !!p.qext[x.n]);
+const MAX_LAMP = 5, MAX_TOTAL = 3 * 1048576;
+const sizeTxt = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+function bukaLink(url) { if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer'); else toast('Link tidak valid'); }
+const dkey = (mkId, n, t) => mkId + '-' + (t === 'q' ? 'q' : '') + n;
+const lampRow = (it, btns) => `<div class="ditem"><span class="dn">${it.tipe === 'link' ? '🔗 ' + esc(it.url) : '📄 ' + esc(it.nama) + (it.size ? ' <small>(' + sizeTxt(it.size) + ')</small>' : '')}</span><span class="row" style="flex-wrap:nowrap;gap:6px">${btns}</span></div>`;
+// Daftar lampiran yang bisa dilihat langsung (tanpa mengunduh) atau diunduh
+const lampList = (items, kind, mkId, n) => items.map((it, j) => lampRow(it, it.tipe === 'link'
+  ? `<button class="btn sm" onclick="lihatRef('${kind}','${mkId}',${n},${j},'')">Buka link</button>`
+  : `<button class="btn sm" onclick="lihatRef('${kind}','${mkId}',${n},${j},'')">Lihat</button><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'')">Unduh</button>`)).join('');
+// Menyusun lampiran sebelum dikirim (tugas 't' atau hasil quiz 'q'): tambah file/link, hapus, lalu kirim
+const draftUI = (m, x, t, label) => {
+  const k = dkey(m.id, x.n, t), a = `'${m.id}',${x.n},'${t}'`, d = S.draft[k] || [], tot = d.reduce((s2, it) => s2 + (it.size || 0), 0), penuh = d.length >= MAX_LAMP;
+  return `<div class="draft"><div class="quote"><b>Lampiran</b> · ${d.length}/${MAX_LAMP} (file atau link)${d.length ? ' · ' + sizeTxt(tot) : ''}</div>
+    ${d.map((it, i) => lampRow(it, `<button class="btn ghost sm dng" onclick="hapusDraft(${a},${i})" aria-label="Hapus lampiran ${i + 1}">✕ Hapus</button>`)).join('')}
+    ${penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>' : `<div class="row" style="margin-top:8px"><input type="file" multiple id="fd-${k}" aria-label="Pilih file" onchange="tambahFile(${a})"></div>
+    <div class="row"><input class="lnk" id="ld-${k}" placeholder="https://… (link, mis. Google Drive atau GitHub)" aria-label="Link" onkeydown="if(event.key==='Enter')tambahLink(${a})"><button class="btn ghost sm" onclick="tambahLink(${a})">+ Tambah link</button></div>`}
+    <div class="row" style="margin-top:10px"><button class="btn lime" ${d.length ? '' : 'disabled'} onclick="send(${a})">${label}${d.length ? ' (' + d.length + ' lampiran)' : ''}</button></div>
+    <div class="quote">Maksimal ${MAX_LAMP} lampiran. Tiap file maks. 1,5 MB, total maks. 3 MB. Lampiran bisa dihapus sebelum dikirim.</div></div>`;
+};
+const MAXB = 1.5 * 1048576;   // batas ukuran berkas (penyimpanan browser terbatas)
+const readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('baca')); r.readAsDataURL(f); });
+// Buka berkas apa pun: PDF/gambar dibuka di tab baru, selain itu diunduh
+function bytesOf(f) {
+  const i = f.data.indexOf(','), mime = (f.data.slice(0, i).match(/:(.*?);/) || [])[1] || 'application/octet-stream';
+  const b = atob(f.data.slice(i + 1)), a = new Uint8Array(b.length);
+  for (let j = 0; j < b.length; j++) a[j] = b.charCodeAt(j);
+  return { a, mime };
+}
+const blobUrl = f => { const { a, mime } = bytesOf(f); return URL.createObjectURL(new Blob([a], { type: mime })); };
+// PDF/gambar dibuka di tab baru, selain itu diunduh. unduh=true memaksa unduh.
+function bukaBerkas(f, unduh) {
+  if (!f || !f.data) { toast('Berkas tidak tersimpan'); return; }
+  try {
+    const url = blobUrl(f), mime = bytesOf(f).mime;
+    if (!unduh && /pdf|^image\//.test(mime) && window.open(url, '_blank')) return;
+    const l = document.createElement('a'); l.href = url; l.download = f.nama; document.body.appendChild(l); l.click(); l.remove();
+  } catch (e) { toast('Berkas tidak bisa dibuka'); }
+}
+// Pratinjau langsung di halaman (tanpa mengunduh): PDF, gambar, dan berkas teks/kode
+const EXT = f => (f.nama.split('.').pop() || '').toLowerCase();
+const EXT_TXT = ['txt', 'java', 'py', 'js', 'ts', 'jsx', 'html', 'htm', 'css', 'json', 'md', 'csv', 'xml', 'c', 'cpp', 'h', 'cs', 'php', 'sql', 'log', 'sh', 'kt', 'rb', 'go', 'ini', 'yml', 'yaml'];
+const EXT_IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+let PV_URL = null;
+function freePv() { if (PV_URL) { try { URL.revokeObjectURL(PV_URL); } catch (e) {} PV_URL = null; } }
+function previewHtml(f) {
+  const x = EXT(f);
+  try {
+    if (x === 'pdf') { PV_URL = blobUrl(f); return `<iframe class="pv" src="${PV_URL}" title="Pratinjau ${esc(f.nama)}"></iframe>`; }
+    if (EXT_IMG.includes(x)) return `<div class="pv img"><img src="${esc(f.data)}" alt="${esc(f.nama)}"></div>`;
+    if (EXT_TXT.includes(x)) {
+      const t = new TextDecoder('utf-8').decode(bytesOf(f).a), cut = t.length > 100000;
+      return `<pre class="pv code">${esc(cut ? t.slice(0, 100000) : t)}</pre>${cut ? '<div class="quote">Hanya 100.000 karakter pertama yang ditampilkan. Unduh untuk melihat seluruhnya.</div>' : ''}`;
+    }
+  } catch (e) { return '<div class="pv none">Berkas tidak bisa ditampilkan. Gunakan tombol Unduh.</div>'; }
+  return `<div class="pv none">Format .${esc(x || '?')} (misalnya Word, PowerPoint, Excel, atau ZIP) tidak bisa ditampilkan langsung oleh browser.<br>Gunakan tombol Unduh untuk membukanya.</div>`;
+}
+// Cari lampiran dari sumbernya: mat=materi, tl=instruksi tugas, ql=instruksi quiz, sub=kiriman tugasku, qx=kiriman quizku
+function refItem(kind, mkId, n, j, kid) {
+  if (kind === 'sub') return itemsOf(P(mkId, U.email).sub[n])[j];
+  if (kind === 'qx') return itemsOf(P(mkId, U.email).qext[n])[j];
+  const x = pertAt(mkId, n, kid); if (!x) return null;
+  return (kind === 'mat' ? matOf(x) : kind === 'tl' ? tlOf(x) : qlOf(x))[j];
+}
+function lihatRef(kind, mkId, n, j, kid) {
+  const it = refItem(kind, mkId, n, j, kid); if (!it) return;
+  if (it.tipe === 'link') { bukaLink(it.url); return; }
+  freePv();
+  modal(`<button class="btn ghost" onclick="tutupModal()">← Kembali</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${it.size ? sizeTxt(it.size) : ''}</div>${previewHtml(it)}
+  <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'${kid || ''}')">Unduh</button></div>`, 'wide');
+}
+function unduhRef(kind, mkId, n, j, kid) { const it = refItem(kind, mkId, n, j, kid); if (it && it.tipe !== 'link') bukaBerkas(it, true); }
+
+// Data lama (pertemuan di level pelajaran) dipindah ke tiap kelasnya
+function migrate() {
+  const l = st.mk(); let ch = false;
+  l.forEach(m => {
+    m.kelas.forEach(k => {
+      if (!k.pert) { k.pert = (m.pert || []).map(x => JSON.parse(JSON.stringify(x))); ch = true; }
+      k.pert.forEach(x => {
+        if (x.pdf !== undefined) { if (!x.materi) x.materi = x.pdf || null; delete x.pdf; ch = true; }
+        if (!Array.isArray(x.materi) || !Array.isArray(x.tugasLamp) || !Array.isArray(x.quizLamp) || x.tugasFile !== undefined) {
+          x.materi = matOf(x); x.tugasLamp = tlOf(x); x.quizLamp = qlOf(x); delete x.tugasFile; ch = true;
+        }
+      });
+    });
+    if (m.pert && m.kelas.length) { delete m.pert; ch = true; }
+  });
+  if (ch) st.setMk(l);
+}
+
+function stats(m, em) {
+  const p = P(m.id, em), pt = pertOf(m, em); let tasks = 0, done = 0;
+  pt.forEach(x => {
+    if (x.tugas) { tasks++; if (p.sub[x.n]) done++; }
+    if (adaQuiz(x)) { tasks++; if (quizDone(p, x)) done++; }
+  });
+  return { hadir: Object.values(p.att).filter(v => v === 'H').length, held: pt.length, tasks, done, todo: tasks - done };
+}
+
+// ---------- helper tampilan ----------
+const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff', '#e5f8ec', '#fff3dc', '#ece8ff', '#ffe9ec', '#e2f6f6'];
+const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i] }; };
+const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
+const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="profil.html"><b>Verifikasi sekarang</b></a></div>';
+const head = () => `<h1>Selamat datang, ${esc(U.nama)}!</h1><p class="quote">${QUOTE}</p>${banner()}`;
+const empty = (ic, t, d, btn) => `<div class="card empty-s"><div class="big-ic">${ic}</div><h3>${t}</h3><p class="quote">${d}</p>${btn}</div>`;
+const sc = (l, v, ic, bg, c) => `<div class="card stat"><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${v}</div></div><div class="ic" style="background:${bg}">${ic}</div></div>`;
+const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
+const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}</h1><div class="quote">${m.kode ? esc(m.kode) + ' · ' : ''}${sub}</div></div></div>`; };
+const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
+const btnMk = '<button class="btn lime" onclick="mkModal()">Buat pelajaran</button>';
+const fmtDt = ts => new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const localIn = ts => new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const over = ts => !!ts && Date.now() > ts;
+const dlChip = ts => ts ? `<span class="chip ${over(ts) ? 'c-no' : 'c-iz'}">Batas: ${fmtDt(ts)}${over(ts) ? ' · sudah lewat' : ''}</span>` : '';
+
+// Absen mandiri: dibuka saat pertemuan dibuat/dibuka ulang, tutup setelah "dur" menit.
+const absenOpen = x => !!(x.absen && x.absen.dur > 0 && Date.now() < x.absen.start + x.absen.dur * 60000);
+const absenExp = x => x.absen.start + x.absen.dur * 60000;
+const fmt = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+const cd = x => `<span data-exp="${absenExp(x)}">${fmt(absenExp(x) - Date.now())}</span>`;
+
+function courseCards(L) {
+  return `<div class="courses">${L.map(m => {
+    const d = dec(m); let sub, foot, held;
+    if (isDosen) {
+      held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; sub = `${m.kelas.length} kelas · ${studentsOf(m.id).length} partisipan`;
+      foot = `<span>Pertemuan berjalan ${totalPert(m)} (semua kelas)</span><span>${m.kelas.length ? 'Lihat kelas →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
+    } else {
+      const s2 = stats(m, U.email); held = s2.held; sub = esc(m.dosenNama);
+      foot = `<span>Pertemuan ${s2.held}/${TOTAL}</span><span>${s2.todo > 0 ? `<b style="color:var(--red)">${s2.todo} tugas/quiz menunggu</b>` : 'Tugas beres'}</span>`;
+    }
+    return `<button class="course" onclick="go('course','${m.id}')"><div class="hd"><div class="ic" style="background:${d.col}">${d.ic}</div><div><b>${esc(m.nama)}</b><span class="s">${sub}</span></div></div><div class="bar"><i style="width:${held / TOTAL * 100}%"></i></div><div class="meta">${foot}</div></button>`;
+  }).join('')}</div>`;
+}
+
+// ---------- BERANDA ----------
+// Ringkasan nyata dari data kelas, absen, dan tugas milik pengguna ini
+function ringkas(u) {
+  if (u.role === 'Pengajar') {
+    const mine = st.mk().filter(m => m.dosen === u.email); let kelas = 0, mhs = 0, pert = 0, kirim = 0, nilai = 0;
+    mine.forEach(m => m.kelas.forEach(k => {
+      kelas++; pert += k.pert.length; const ss = studentsOf(m.id, k.id); mhs += ss.length;
+      k.pert.filter(x => x.tugas).forEach(x => ss.forEach(w => { const q = P(m.id, w.email); if (q.sub[x.n]) { kirim++; if (!q.nilai[x.n]) nilai++; } }));
+    }));
+    return { mine, tiles: [[mine.length, 'Pelajaran diampu'], [kelas, 'Total kelas'], [mhs, 'Partisipan'], [pert, 'Pertemuan dibuat'], [kirim, 'Tugas terkumpul'], [nilai, 'Perlu dinilai']] };
+  }
+  const L = st.jn().filter(j => j.mhs === u.email).map(j => getMk(j.mkId)).filter(Boolean); let hadir = 0, held = 0, tasks = 0, done = 0; const skor = [];
+  L.forEach(m => { const q = stats(m, u.email); hadir += q.hadir; held += q.held; tasks += q.tasks; done += q.done; Object.values(P(m.id, u.email).nilai).forEach(nl => { if (nl.skor != null) skor.push(nl.skor); }); });
+  const avg = skor.length ? Math.round(skor.reduce((x, y) => x + y, 0) / skor.length * 10) / 10 : '—';
+  return { mine: L, tiles: [[L.length, 'Pelajaran diikuti'], [hadir + '/' + held, 'Pertemuan dihadiri'], [held ? Math.round(hadir / held * 100) + '%' : '—', 'Tingkat kehadiran'], [done + '/' + tasks, 'Tugas & quiz selesai'], [tasks - done, 'Perlu dikerjakan'], [avg, 'Rata-rata nilai tugas']] };
+}
+
+// Tugas/quiz yang batasnya kurang dari 24 jam lagi
+const soonHtml = (todo, pf) => {
+  const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < 864e5);
+  return t.length ? `<h2>⏰ Segera berakhir</h2>${t.map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip c-no">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '';
+};
+function home() {
+  const L = myMk(); let h = head();
+  if (isDosen) {
+    if (!L.length) return h + empty('🧑‍🏫', 'Kamu belum membuat pelajaran', 'Buat pelajaran dulu, lalu buat kelas (A, B, C…) dan bagikan kode kelasnya ke partisipan.', btnMk);
+    const kls = L.reduce((a, m) => a + m.kelas.length, 0), mhs = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
+    const nDinilai = ringkas(U).tiles[5][0], pfD = prefOf(U);
+    return h + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas menunggu penilaian</b><div class="quote">Buka Pelajaran, pilih kelas, lalu Pertemuan → Pengumpulan.</div></div><button class="btn lime" onclick="go('courses')">Buka pelajaran</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff')}${sc('Total kelas', kls, '🏷️', '#fff0d2')}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8')}</div><h2>Pelajaran</h2>${courseCards(L)}`;
+  }
+  if (!L.length) return h + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
+  const t = L.reduce((a, m) => { const s2 = stats(m, U.email); a.done += s2.done; a.todo += s2.todo; a.hadir += s2.hadir; a.held += s2.held; return a; }, { done: 0, todo: 0, hadir: 0, held: 0 });
+  const pf = prefOf(U), abs = pf.ab === false ? [] : L.flatMap(m => pertOf(m, U.email).filter(x => absenOpen(x) && !P(m.id, U.email).att[x.n]).map(x => ({ m, x })));
+  const todo = [];
+  L.forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => { if (x.tugas && !p.sub[x.n]) todo.push([m, x, p.kembali[x.n] ? 'Dikembalikan' : 'Tugas', p.kembali[x.n] ? null : x.tugasDl]); else if (x.tugas && legacyFile(p.sub[x.n])) todo.push([m, x, 'Kirim ulang', null]); if (adaQuiz(x) && !quizDone(p, x)) todo.push([m, x, 'Quiz', x.quizDl]); }); });
+  return h + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
+    + soonHtml(todo, pf)
+    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Total tugas selesai', t.done, '✅', '#dff5e8')}${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '')}${sc('Pertemuan tidak absen (1 semester)', `${t.hadir} <small>dari ${t.held} pertemuan</small>`, '🗓️', '#e1ebff')}</div>`
+    + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
+    + `<h2>Pelajaran</h2>${courseCards(L)}`;
+}
+function bukaItem(mkId, n) { S.view = 'course'; S.cid = mkId; S.open[mkId + '-' + n] = true; render(); window.scrollTo(0, 0); }
+
+// ---------- MATA KULIAH ----------
+function coursesPage() {
+  const L = myMk();
+  const top = `<div class="row" style="justify-content:space-between"><div><h1>Pelajaran</h1><p class="quote">${isDosen ? 'Pilih pelajaran, lalu kelasnya untuk mengatur pertemuan.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<button class="btn lime" onclick="joinModal()">+ Masuk kelas</button>'}</div>`;
+  if (!L.length) return top + (isDosen ? empty('📚', 'Belum ada pelajaran', 'Buat pelajaran, lalu buat kelas beserta kode kelas untuk dibagikan ke partisipan.', btnMk) : empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar untuk melihat pelajaranmu.', btnJoin));
+  return top + `<div style="margin-top:16px">${courseCards(L)}</div>`;
+}
+function coursePage() {
+  const m = getMk(S.cid);
+  if (!m || !myMk().some(x => x.id === m.id)) { S.view = 'courses'; return coursesPage(); }
+  return isDosen ? courseD(m) : courseM(m);
+}
+
+// --- tampilan partisipan (hanya nama pelajaran, bukan nama kelas) ---
+function courseM(m) {
+  const s2 = stats(m, U.email), p = P(m.id, U.email), pt = pertOf(m, U.email), pct = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
+  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, 'Pengajar: ' + esc(m.dosenNama) + (m.jadwal ? ' · ' + esc(m.jadwal) : ''))}
+  <div class="row" style="margin:-4px 0 16px"><button class="btn ghost dng" onclick="keluarModal('${m.id}')">🚪 Keluar dari pelajaran</button></div>
+  <div class="grid4">${kp('Kehadiran', `${s2.hadir}<small>/${s2.held}</small>`, pct + '% hadir')}${kp('Total pertemuan', `${s2.held}<small>/${TOTAL}</small>`)}${kp('Tugas selesai', `${s2.done}<small>/${s2.tasks}</small>`)}${kp('Perlu dikerjakan', `<span style="color:${s2.todo ? 'var(--red)' : 'inherit'}">${s2.todo}</span>`)}</div>
+  <h2>Daftar pertemuan</h2>${pt.length ? pt.map(x => meetingM(m, x, p)).join('') : '<p class="empty">Pengajar belum membuka pertemuan.</p>'}`;
+}
+function meetingM(m, x, p) {
+  const k = m.id + '-' + x.n, o = S.open[k], a = p.att[x.n], op = absenOpen(x);
+  const lbl = { H: ['c-ok', 'Hadir'], I: ['c-iz', 'Izin'], A: ['c-no', 'Alpa'] };
+  const bd = a ? `<span class="chip ${lbl[a][0]}">${lbl[a][1]}</span>` : op ? '<span class="chip c-iz">Absen dibuka</span>' : '<span class="chip c-wait">Belum diabsen</span>';
+  const tag = [matOf(x).length ? 'Materi' : '', x.tugas ? 'Tugas' + (p.sub[x.n] ? ' ✓' : '') : '', adaQuiz(x) ? 'Quiz' + (quizDone(p, x) ? ' ✓' : '') : ''].filter(Boolean).join(' · ') || 'Tanpa materi/tugas/quiz';
+  let body = '';
+  if (o) {
+    const ab = a ? `Status absenmu: <b>${lbl[a][1]}</b>` : op ? `<div class="row"><span>Sisa waktu absen: <b>${cd(x)}</b></span><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`
+      : `<span class="empty">${x.absen && x.absen.dur > 0 ? 'Batas waktu absen sudah lewat. Hubungi pengajar jika perlu diabsen.' : 'Absensi diisi oleh pengajar.'}</span>`;
+    body = `<div class="body"><div class="blk"><h4>Absensi</h4>${ab}</div><div class="blk"><h4>Materi</h4>${matOf(x).length ? lampList(matOf(x), 'mat', m.id, x.n) : '<span class="empty">Pengajar belum membagikan materi.</span>'}</div>`;
+    if (x.tugas) {
+      const f = p.sub[x.n], nl = p.nilai[x.n], kb = p.kembali[x.n], lg = legacyFile(f), late = over(x.tugasDl) && !lg && !kb;
+      const upload = draftUI(m, x, 't', f || kb ? 'Kirim ulang tugas' : 'Kirim tugas');
+      const nilaiHtml = nl ? `<div class="nilai">✅ Sudah dinilai${nl.skor != null ? ` · Nilai <b>${nl.skor}</b>` : ''}${nl.cat ? `<div class="quote">Catatan pengajar: ${esc(nl.cat)}</div>` : ''}</div>` : '<div class="quote" style="margin-top:6px">Menunggu penilaian pengajar.</div>';
+      body += `<div class="blk"><h4>Tugas pertemuan ${x.n} ${dlChip(x.tugasDl)}</h4><p style="margin:0 0 8px">${esc(x.tugas)}</p>`
+        + (tlOf(x).length ? `<div class="quote"><b>Instruksi tugas</b></div>${lampList(tlOf(x), 'tl', m.id, x.n)}<div style="height:8px"></div>` : '')
+        + (f
+          ? `<div class="row"><span class="chip c-ok">Terkirim</span><span style="font-size:13px">${subAt(f) ? fmtDt(subAt(f)) : ''}</span>${lg || nl || late ? '' : `<button class="btn ghost" onclick="unsend('${m.id}',${x.n})">Kirim ulang</button>`}</div>`
+            + (itemsOf(f).length ? `<div class="ditems">${lampList(itemsOf(f), 'sub', m.id, x.n)}</div>` : `<div class="quote">${esc(subName(f))}</div>`)
+            + (lg ? '<div class="warnbox">⚠️ Berkas yang kamu kirim sebelumnya tidak tersimpan, jadi pengajar tidak bisa membukanya. Kirim ulang berkasnya (nilai yang sudah ada tetap dipertahankan).</div>' : '')
+            + nilaiHtml + (lg ? upload : '')
+          : (kb ? `<div class="warnbox">↩️ <b>Tugas dikembalikan pengajar</b> untuk diperbaiki${kb.lama ? ' (berkas sebelumnya: ' + esc(kb.lama) + ')' : ''}.${kb.cat ? `<div class="quote">Catatan pengajar: ${esc(kb.cat)}</div>` : ''}</div>` : '') + (late ? '<span class="empty">Batas waktu pengumpulan sudah lewat. Hubungi pengajar jika perlu.</span>' : upload)) + '</div>';
+    }
+    if (adaQuiz(x)) {
+      const late = over(x.quizDl), sq = p.quiz[x.n], qe = p.qext[x.n];
+      let q = `<div class="blk"><h4>Quiz ${dlChip(x.quizDl)}</h4>`;
+      if (x.quiz.length) q += `<div class="row">${sq != null ? `<span class="chip c-bl">Nilai ${sq}</span>${late ? '' : `<button class="btn ghost" onclick="quiz('${m.id}',${x.n})">Kerjakan ulang</button>`}` : late ? '<span class="empty">Batas waktu quiz sudah lewat.</span>' : `<span>Quiz soal dari pengajar (${x.quiz.length} soal).</span><button class="btn lime" onclick="quiz('${m.id}',${x.n})">Kerjakan quiz</button>`}</div>`;
+      if (qlOf(x).length) {
+        q += `<div class="quote" style="margin-top:${x.quiz.length ? 10 : 0}px"><b>Instruksi / link quiz</b></div>${lampList(qlOf(x), 'ql', m.id, x.n)}`;
+        if (qe) q += `<div class="row" style="margin-top:8px"><span class="chip c-ok">Selesai</span><span style="font-size:13px">${(qe.items || []).length ? 'Hasil dikirim ' : 'Ditandai selesai '}${fmtDt(qe.at)}</span>${late ? '' : `<button class="btn ghost sm" onclick="batalQext('${m.id}',${x.n})">Batalkan</button>`}</div>${(qe.items || []).length ? `<div class="ditems">${lampList(qe.items, 'qx', m.id, x.n)}</div>` : ''}`;
+        else if (late) q += '<div class="empty">Batas waktu quiz sudah lewat.</div>';
+        else q += `<div class="row" style="margin-top:10px"><button class="btn lime" onclick="tandaiQuiz('${m.id}',${x.n})">✓ Tandai selesai</button><span class="quote">atau kirim hasil pengerjaanmu seperti tugas:</span></div>${draftUI(m, x, 'q', 'Kirim hasil quiz')}`;
+      }
+      body += q + '</div>';
+    }
+    body += '</div>';
+  }
+  return `<div class="mt"><button aria-expanded="${!!o}" onclick="tog('${k}')"><div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${tag}</small></div>${bd}</button>${body}</div>`;
+}
+function tog(k) { S.open[k] = !S.open[k]; render(); }
+function absenSendiri(mkId, n) {
+  const x = pertAt(mkId, n);
+  if (!x || !myMk().some(q => q.id === mkId)) return;
+  if (!absenOpen(x)) { toast('Batas waktu absen sudah lewat'); render(); return; }
+  const p = P(mkId, U.email);
+  if (p.att[n]) { toast('Absenmu sudah tercatat'); return; }
+  p.att[n] = 'H'; setP(mkId, U.email, p); toast('Absen berhasil ✅'); render();
+}
+// Lampiran disimpan lengkap (isi berkas) agar pengajar bisa membukanya
+async function addFiles(d, files) {
+  let msg = '';
+  for (const f of files) {
+    if (d.length >= MAX_LAMP) { msg = 'Maksimal ' + MAX_LAMP + ' lampiran.'; break; }
+    if (f.size > MAXB) { msg = f.name + ' lebih dari 1,5 MB.'; continue; }
+    if (d.reduce((a, it) => a + (it.size || 0), 0) + f.size > MAX_TOTAL) { msg = 'Total ukuran lampiran maksimal 3 MB.'; continue; }
+    if (d.some(it => it.tipe === 'file' && it.nama === f.name && it.size === f.size)) { msg = f.name + ' sudah ditambahkan.'; continue; }
+    try { d.push({ tipe: 'file', nama: f.name, size: f.size, data: await readFile(f) }); } catch (e) { msg = 'Gagal membaca ' + f.name; }
+  }
+  return msg;
+}
+function addLink(d, v) {
+  if (!/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(v)) return 'Masukkan link yang valid, diawali http:// atau https://';
+  if (d.length >= MAX_LAMP) return 'Maksimal ' + MAX_LAMP + ' lampiran.';
+  if (d.some(it => it.tipe === 'link' && it.url === v)) return 'Link ini sudah ditambahkan.';
+  d.push({ tipe: 'link', url: v }); return '';
+}
+async function tambahFile(mkId, n, t) {
+  const k = dkey(mkId, n, t), inp = document.getElementById('fd-' + k);
+  if (!inp || !inp.files || !inp.files.length) return;
+  const msg = await addFiles(S.draft[k] = S.draft[k] || [], [...inp.files]);
+  inp.value = ''; if (msg) toast(msg); render();
+}
+function tambahLink(mkId, n, t) {
+  const k = dkey(mkId, n, t), inp = document.getElementById('ld-' + k); if (!inp) return;
+  const msg = addLink(S.draft[k] = S.draft[k] || [], inp.value.trim());
+  if (msg) { toast(msg); return; }
+  inp.value = ''; render();
+}
+function hapusDraft(mkId, n, t, i) { const d = S.draft[dkey(mkId, n, t)]; if (d) d.splice(i, 1); render(); }
+const rapiItems = d => d.map(it => it.tipe === 'link' ? { tipe: 'link', url: it.url } : { tipe: 'file', nama: it.nama, size: it.size, data: it.data });
+async function send(mkId, n, t) {
+  const x = pertAt(mkId, n); if (!x) return;
+  const k = dkey(mkId, n, t), d = S.draft[k] || [], p = P(mkId, U.email);
+  if (!d.length) { toast('Tambahkan minimal satu file atau link dulu'); return; }
+  if (t === 'q') {
+    if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
+    p.qext[n] = { at: Date.now(), items: rapiItems(d) };
+  } else {
+    if (over(x.tugasDl) && !legacyFile(p.sub[n]) && !p.kembali[n]) { toast('Batas waktu pengumpulan sudah lewat'); render(); return; }
+    const a = d[0];
+    p.sub[n] = { nama: (a.tipe === 'link' ? a.url : a.nama) + (d.length > 1 ? ' (+' + (d.length - 1) + ' lainnya)' : ''), at: Date.now(), items: rapiItems(d) };
+    delete p.kembali[n];
+  }
+  if (!setP(mkId, U.email, p)) { toast('Penyimpanan browser penuh. Hapus lampiran yang besar atau pakai link.'); return; }
+  S.draft[k] = []; toast(t === 'q' ? 'Hasil quiz terkirim' : 'Tugas terkirim'); render();
+}
+// Quiz berupa link/file: partisipan cukup menandai selesai
+function tandaiQuiz(mkId, n) {
+  const x = pertAt(mkId, n); if (!x) return;
+  if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
+  const p = P(mkId, U.email); p.qext[n] = { at: Date.now(), items: [] }; setP(mkId, U.email, p); toast('Quiz ditandai selesai ✅'); render();
+}
+function batalQext(mkId, n) {
+  const x = pertAt(mkId, n); if (x && over(x.quizDl)) { toast('Batas waktu sudah lewat'); return; }
+  const p = P(mkId, U.email); delete p.qext[n]; setP(mkId, U.email, p); render();
+}
+function unsend(mkId, n) {
+  const x = pertAt(mkId, n), p = P(mkId, U.email);
+  if (x && over(x.tugasDl)) { toast('Batas waktu sudah lewat'); return; }
+  if (p.nilai[n]) { toast('Tugas sudah dinilai, tidak bisa dikirim ulang'); return; }
+  delete p.sub[n]; setP(mkId, U.email, p); render();
+}
+function quiz(mkId, n) {
+  const x = pertAt(mkId, n);
+  if (!x) return;
+  if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
+  modal(`<h3>Quiz: ${esc(x.topik)}</h3><div class="quote">Pilih satu jawaban per soal. ${x.quizDl ? 'Batas: ' + fmtDt(x.quizDl) : ''}</div>
+  ${x.quiz.map((q, i) => `<div class="q"><p>${i + 1}. ${esc(q.q)}</p>${q.o.map((o, j) => `<label><input type="radio" name="q${i}" value="${j}"> ${esc(o)}</label>`).join('')}</div>`).join('')}
+  <div class="row"><button class="btn lime" onclick="grade('${mkId}',${n})">Kirim jawaban</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div>`);
+}
+function grade(mkId, n) {
+  const x = pertAt(mkId, n); if (!x) return;
+  if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); tutupModal(); render(); return; }
+  const qs = x.quiz; let ok = 0, miss = false;
+  qs.forEach((q, i) => { const r = document.querySelector(`input[name=q${i}]:checked`); if (!r) { miss = true; return; } if (+r.value === q.a) ok++; });
+  if (miss) { toast('Jawab semua soal dulu'); return; }
+  const sc2 = Math.round(ok / qs.length * 100), p = P(mkId, U.email); p.quiz[n] = sc2; p.qt[n] = Date.now(); setP(mkId, U.email, p);
+  qs.forEach((q, i) => document.querySelectorAll(`input[name=q${i}]`).forEach(r => { const l = r.parentElement; r.disabled = true; if (+r.value === q.a) l.classList.add('ok'); else if (r.checked) l.classList.add('bad'); }));
+  document.querySelector('.sheet .row').innerHTML = `<span class="chip c-bl">Nilai kamu: ${sc2}</span><button class="btn" onclick="tutupModal();render()">Selesai</button>`;
+}
+
+// --- tampilan pengajar: pelajaran -> daftar kelas ---
+function courseD(m) {
+  const cards = m.kelas.map(k => {
+    const n = studentsOf(m.id, k.id).length;
+    return `<button class="course" onclick="bukaKelas('${k.id}')"><div class="hd"><div class="ic" style="background:var(--limeS);font-weight:800">${esc(k.nama.trim().slice(-1).toUpperCase())}</div><div><b>${esc(k.nama)}</b><span class="s">${n} partisipan</span></div><span class="code-pill" style="margin-left:auto">${esc(k.kode)}</span></div><div class="bar"><i style="width:${k.pert.length / TOTAL * 100}%"></i></div><div class="meta"><span>Pertemuan ${k.pert.length}/${TOTAL}</span><span>Buka kelas →</span></div></button>`;
+  }).join('');
+  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, esc(m.jadwal || 'Pelajaran saya'))}
+  <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="mkModal('${m.id}')">✏️ Ubah pelajaran</button><button class="btn ghost dng" onclick="hapusMkModal('${m.id}')">🗑 Hapus pelajaran</button></div>
+  <div class="grid3">${kp('Kelas', m.kelas.length)}${kp('Partisipan bergabung', studentsOf(m.id).length)}${kp('Pertemuan berjalan', totalPert(m), 'total dari semua kelas')}</div>
+  <h2>Kelas</h2>${cards ? `<div class="courses">${cards}</div>` : '<p class="empty">Belum ada kelas. Buat kelas pertama di bawah.</p>'}
+  <div class="card" style="margin-top:16px"><b>Buat kelas baru</b><p class="quote">Contoh: nama "Kelas A", kode "PBO-A". Kode inilah yang diberikan ke partisipan.</p>
+  <div class="two" style="margin-top:10px"><label class="f">Nama kelas<input id="kNama" placeholder="Kelas A" maxlength="30"></label>
+  <label class="f">Kode kelas<span class="row" style="flex-wrap:nowrap"><input id="kKode" placeholder="PBO-A" maxlength="16" style="text-transform:uppercase"><button type="button" class="btn ghost" onclick="acak('${m.id}')">Acak</button></span></label></div>
+  <p class="err" id="kErr" role="alert"></p><button class="btn lime" style="margin-top:8px" onclick="addKelas('${m.id}')">Tambah kelas</button></div>`;
+}
+function bukaKelas(kid) { S.view = 'kelas'; S.kid = kid; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
+function bukaPert() { S.view = 'pert'; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
+function acak(mkId) {
+  const m = getMk(mkId);
+  const ini = (m.kode || m.nama.split(/\s+/).map(w => w[0]).join('')).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'KLS';
+  const l = ($('#kNama').value.trim().slice(-1) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  $('#kKode').value = `${ini}-${l}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+}
+function addKelas(mkId) {
+  const nama = $('#kNama').value.trim(), kode = $('#kKode').value.trim().toUpperCase(), e = $('#kErr');
+  if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
+  if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
+  if (st.mk().some(m => m.kelas.some(k => k.kode === kode))) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return; }
+  const m = getMk(mkId); m.kelas.push({ id: uid('k'), nama, kode, pert: [] });
+  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  render(); toast('Kelas dibuat. Kode: ' + kode);
+}
+function salin(kode) {
+  try { navigator.clipboard.writeText(kode).then(() => toast('Kode disalin: ' + kode), () => toast('Kode kelas: ' + kode)); } catch (e) { toast('Kode kelas: ' + kode); }
+}
+
+// --- tampilan pengajar: satu kelas (kode, jumlah partisipan, pertemuan berjalan) ---
+function ctxKelas() {
+  const m = getMk(S.cid), k = getKelas(m, S.kid);
+  return isDosen && m && k && m.dosen === U.email ? { m, k } : null;
+}
+function kelasPage() {
+  const c = ctxKelas(); if (!c) { S.view = 'courses'; return coursesPage(); }
+  const { m, k } = c, ss = studentsOf(m.id, k.id);
+  return `<button class="back" onclick="go('course','${m.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(m.nama)}</button>${hdr(m, 'Kelas: ' + esc(k.nama))}
+  <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="kelasModal()">✏️ Ubah kelas</button><button class="btn ghost dng" onclick="hapusKelasModal()">🗑 Hapus kelas</button></div>
+  <div class="grid3"><div class="card kp"><div class="l">Kode kelas</div><div style="margin:8px 0"><span class="code-pill big">${esc(k.kode)}</span></div><button class="btn ghost" onclick="salin('${esc(k.kode)}')">Salin kode</button></div>
+  ${kp('Partisipan bergabung', ss.length)}${kp('Pertemuan berjalan', `${k.pert.length}<small>/${TOTAL}</small>`)}</div>
+  <div class="row" style="margin-top:18px"><button class="btn lime" onclick="bukaPert()">Info selengkapnya →</button><span class="quote">Atur materi, tugas, quiz, dan absensi untuk ${esc(k.nama)}.</span></div>
+  <h2>Partisipan (${ss.length})</h2><div class="card">${ss.length ? ss.map(u => `<div class="srow"><b>${esc(u.nama)}</b><span>${esc(u.id)} · ${esc(u.email)}</span></div>`).join('') : '<span class="empty">Belum ada partisipan yang bergabung. Bagikan kode kelas di atas.</span>'}</div>`;
+}
+
+// --- tampilan pengajar: pertemuan sebuah kelas ---
+const qzText = qz => qz.map(q => [q.q, ...q.o, q.a + 1].join(' | ')).join('\n');
+// Penyusun lampiran di form pengajar (materi, instruksi tugas, instruksi quiz). Disimpan di S.pf agar tidak hilang saat tampilan diperbarui.
+const ALB = { mat: 'Materi', tl: 'Lampiran instruksi tugas', ql: 'Link / file untuk quiz' };
+function pfInit(k, e) {
+  const key = (e ? 'e' + e.n : 'n' + k.pert.length) + ':' + k.id;
+  if (S.pfKey !== key) { S.pfKey = key; S.pf = { mat: e ? matOf(e).slice() : [], tl: e ? tlOf(e).slice() : [], ql: e ? qlOf(e).slice() : [] }; }
+}
+function lampEditorInner(kind) {
+  const d = S.pf[kind], tot = d.reduce((a, it) => a + (it.size || 0), 0), penuh = d.length >= MAX_LAMP;
+  return `<div class="quote"><b>${ALB[kind]}</b> · ${d.length}/${MAX_LAMP} (file atau link)${d.length ? ' · ' + sizeTxt(tot) : ''}</div>
+    ${d.map((it, i) => lampRow(it, `<button type="button" class="btn ghost sm dng" onclick="pfHapus('${kind}',${i})" aria-label="Hapus lampiran ${i + 1}">✕ Hapus</button>`)).join('')}
+    ${penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>' : `<div class="row" style="margin-top:8px"><input type="file" multiple id="pf-f-${kind}" aria-label="Pilih file" onchange="pfFile('${kind}')"></div>
+    <div class="row"><input class="lnk" id="pf-l-${kind}" placeholder="https://… (link, mis. Google Drive, YouTube, Google Form)" aria-label="Link" onkeydown="if(event.key==='Enter'){event.preventDefault();pfLink('${kind}')}"><button type="button" class="btn ghost sm" onclick="pfLink('${kind}')">+ Tambah link</button></div>`}
+    <div class="quote">Maksimal ${MAX_LAMP} lampiran (file atau link). Tiap file maks. 1,5 MB, total maks. 3 MB.</div>`;
+}
+const lampEditor = kind => `<div class="draft" id="ed-${kind}">${lampEditorInner(kind)}</div>`;
+const pfRefresh = kind => { const e = document.getElementById('ed-' + kind); if (e) e.innerHTML = lampEditorInner(kind); };
+async function pfFile(kind) {
+  const inp = document.getElementById('pf-f-' + kind); if (!inp || !inp.files || !inp.files.length || !S.pf) return;
+  const msg = await addFiles(S.pf[kind], [...inp.files]); inp.value = ''; if (msg) toast(msg); pfRefresh(kind);
+}
+function pfLink(kind) {
+  const inp = document.getElementById('pf-l-' + kind); if (!inp || !S.pf) return;
+  const msg = addLink(S.pf[kind], inp.value.trim()); if (msg) { toast(msg); return; } inp.value = ''; pfRefresh(kind);
+}
+function pfHapus(kind, i) { if (S.pf) S.pf[kind].splice(i, 1); pfRefresh(kind); }
+
+function pertPage() {
+  const c = ctxKelas(); if (!c) { S.view = 'courses'; return coursesPage(); }
+  const { m, k } = c, ss = studentsOf(m.id, k.id), e = S.edit ? k.pert.find(x => x.n === S.edit) : null;
+  const list = k.pert.map(x => {
+    const ab = x.absen && x.absen.dur > 0 ? (absenOpen(x) ? `Absen dibuka · sisa ${cd(x)}` : `Absen mandiri ditutup (${x.absen.dur} mnt)`) : 'Tanpa absen mandiri';
+    const kt = x.tugas ? `Tugas ${ss.filter(u => P(m.id, u.email).sub[x.n]).length}/${ss.length} terkumpul` : '', kq = adaQuiz(x) ? `Quiz ${ss.filter(u => quizDone(P(m.id, u.email), x)).length}/${ss.length} selesai` : '';
+    return `<div class="mt"><div class="prow"><div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${[ab, matOf(x).length ? 'Materi ' + matOf(x).length : '', kt, kq].filter(Boolean).join(' · ')}</small></div>${x.tugas || adaQuiz(x) ? `<button class="btn ghost" onclick="kumpulModal(${x.n})">Pengumpulan</button>` : ''}<button class="btn ghost" onclick="absenModal(${x.n})">Absensi</button><button class="btn ghost" onclick="editPert(${x.n})">Edit</button></div></div>`;
+  }).join('') || '<p class="empty">Belum ada pertemuan. Tambahkan pertemuan pertama di bawah.</p>';
+  const del = k.pert.length && !e ? '<button class="btn ghost" style="margin-top:4px" onclick="delPert()">Hapus pertemuan terakhir</button>' : '';
+  const head2 = `<button class="back" onclick="bukaKelas('${k.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(k.nama)}</button>${hdr(m, 'Pertemuan · ' + esc(k.nama) + ' · ' + ss.length + ' partisipan')}<h2>Daftar pertemuan</h2>`;
+  if (!e && k.pert.length >= TOTAL) return head2 + list + del + '<p class="empty" style="margin-top:14px">Semua 16 pertemuan kelas ini sudah dibuat.</p>';
+  pfInit(k, e);
+  const v = e || { topik: '', tugas: '', quiz: [], tugasDl: null, quizDl: null }, dur = e ? (e.absen ? e.absen.dur : 0) : 5;
+  const adaQ = e ? adaQuiz(e) : false, tg = box => `onchange="document.getElementById('${box}').hidden=!this.checked"`;
+  const dlBox = (chk, box, inp, ts) => `<label class="chk"><input type="checkbox" id="${chk}" ${ts ? 'checked' : ''} ${tg(box)}> Pakai batas waktu</label><div id="${box}" ${ts ? '' : 'hidden'}><label class="f">Batas (tanggal & jam)<input type="datetime-local" id="${inp}" value="${ts ? localIn(ts) : ''}"></label></div>`;
+  return head2 + list + del + `<div class="card" id="pForm" style="margin-top:16px"><b>${e ? 'Edit pertemuan ' + e.n : 'Tambah pertemuan ' + (k.pert.length + 1)} · ${esc(k.nama)}</b>
+  <div class="fg" style="margin-top:10px"><label class="f">Topik<input id="pTopik" maxlength="80" value="${esc(v.topik)}"></label>
+  <label class="f">Batas absen mandiri (menit) — partisipan bisa absen sendiri selama waktu ini. Isi 0 jika pengajar yang mengabsen.<input id="pDur" type="number" min="0" max="180" value="${dur}"></label>
+  ${e ? '<label class="chk"><input type="checkbox" id="pReopen"> Buka ulang absen sekarang (hitung mundur mulai dari sekarang)</label>' : ''}
+  <div class="quote" style="margin:4px 0 0"><b>Opsi pertemuan</b> (centang yang dipakai)</div>
+  <label class="chk"><input type="checkbox" id="uMateri" ${S.pf.mat.length ? 'checked' : ''} ${tg('bMateri')}> Materi (maks. 5 file atau link)</label>
+  <div id="bMateri" class="blk" ${S.pf.mat.length ? '' : 'hidden'}>${lampEditor('mat')}</div>
+  <label class="chk"><input type="checkbox" id="uTugas" ${v.tugas ? 'checked' : ''} ${tg('bTugas')}> Tugas (muncul di partisipan sebagai tugas yang harus diselesaikan)</label>
+  <div id="bTugas" class="blk" ${v.tugas ? '' : 'hidden'}><div class="fg"><label class="f">Deskripsi / instruksi tugas<textarea id="pTugas" rows="2" maxlength="300">${esc(v.tugas)}</textarea></label>
+  ${lampEditor('tl')}${dlBox('uTgDl', 'bTgDl', 'pTgDl', v.tugasDl)}</div></div>
+  <label class="chk"><input type="checkbox" id="uQuiz" ${adaQ ? 'checked' : ''} ${tg('bQuiz')}> Quiz (muncul di partisipan sebagai quiz yang perlu dikerjakan)</label>
+  <div id="bQuiz" class="blk" ${adaQ ? '' : 'hidden'}><div class="fg"><div class="quote">Quiz bisa berupa <b>soal di sini</b>, <b>link / file</b> (mis. Google Form atau berkas soal), atau keduanya. Untuk link/file, partisipan bisa menandai selesai atau mengirim hasil pengerjaannya.</div>
+  ${lampEditor('ql')}
+  <label class="f">Soal pilihan ganda (opsional) — satu soal per baris: <code>Soal | Opsi A | Opsi B | Opsi C | nomor jawaban benar</code><textarea id="pQuiz" rows="4" placeholder="Apa itu enkapsulasi? | Menyembunyikan data | Mewarisi kelas | Membuat objek | 1">${esc(qzText(v.quiz))}</textarea></label>${dlBox('uQzDl', 'bQzDl', 'pQzDl', v.quizDl)}</div></div>
+  <p class="err" id="pErr" role="alert"></p>
+  <div class="row"><button class="btn lime" onclick="savePert()">${e ? 'Simpan perubahan' : 'Tambah pertemuan'}</button>${e ? '<button class="btn ghost" onclick="S.edit=null;S.pfKey=null;render()">Batal</button>' : ''}</div></div></div>`;
+}
+function parseQuiz(txt) {
+  const out = [], lines = txt.split('\n').map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const p = lines[i].split('|').map(s2 => s2.trim());
+    const a = parseInt(p[p.length - 1], 10), o = p.slice(1, -1);
+    if (p.length < 4 || !p[0] || o.length < 2 || o.length > 5 || o.some(x => !x) || !(a >= 1 && a <= o.length))
+      return `Format quiz di baris ${i + 1} belum benar. Contoh: Soal | Opsi A | Opsi B | 1`;
+    out.push({ q: p[0], o, a: a - 1 });
+  }
+  return out;
+}
+function editPert(n) { S.edit = n; render(); const f = document.getElementById('pForm'); if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth' }); }
+async function savePert() {
+  const c = ctxKelas(); if (!c || !S.pf) return;
+  const { m, k } = c, e = $('#pErr'), old = S.edit ? k.pert.find(x => x.n === S.edit) : null, topik = $('#pTopik').value.trim();
+  const fail = t => { e.textContent = t; };
+  if (!topik) return fail('Topik wajib diisi.');
+  const dur = parseInt($('#pDur').value, 10);
+  if (!(dur >= 0 && dur <= 180)) return fail('Batas absen harus 0–180 menit.');
+  let tugas = '', qz = [], materi = [], tugasLamp = [], quizLamp = [], tugasDl = null, quizDl = null;
+  const dl = (chk, inp, prev, nama) => {
+    if (!$(chk).checked) return null;
+    const t = new Date($(inp).value).getTime();
+    if (!(t > 0)) throw new Error('Isi tanggal & jam batas waktu ' + nama + '.');
+    if (t !== prev && t <= Date.now()) throw new Error('Batas waktu ' + nama + ' harus di masa depan.');
+    return t;
+  };
+  try {
+    if ($('#uMateri').checked) { materi = S.pf.mat.slice(); if (!materi.length) return fail('Tambahkan minimal satu materi (file atau link), atau hilangkan centang Materi.'); }
+    if ($('#uTugas').checked) {
+      tugas = $('#pTugas').value.trim(); if (!tugas) return fail('Isi deskripsi tugas, atau hilangkan centang Tugas.');
+      tugasLamp = S.pf.tl.slice(); tugasDl = dl('#uTgDl', '#pTgDl', old && old.tugasDl, 'tugas');
+    }
+    if ($('#uQuiz').checked) {
+      const q = parseQuiz($('#pQuiz').value);
+      if (typeof q === 'string') return fail(q);
+      qz = q; quizLamp = S.pf.ql.slice();
+      if (!qz.length && !quizLamp.length) return fail('Isi soal quiz atau tambahkan link/file quiz, atau hilangkan centang Quiz.');
+      quizDl = dl('#uQzDl', '#pQzDl', old && old.quizDl, 'quiz');
+    }
+  } catch (err) { return fail(err.message); }
+  const reopen = old ? $('#pReopen').checked : true;
+  const absen = { dur, start: old && old.absen && !reopen ? old.absen.start : Date.now() };
+  const data = { topik, tugas, tugasLamp, tugasDl, quiz: qz, quizLamp, quizDl, materi, absen };
+  if (old) { Object.assign(old, data); delete old.tugasFile; } else k.pert.push({ n: k.pert.length + 1, ...data });
+  if (!saveMk(m)) return fail('Penyimpanan browser penuh. Coba kurangi berkas atau pakai link.');
+  const msg = old ? 'Pertemuan ' + old.n + ' diperbarui' : 'Pertemuan ' + k.pert.length + ' ditambahkan';
+  S.edit = null; S.pfKey = null; S.pf = null; render(); toast(msg);
+}
+function delPert() {
+  const c = ctxKelas(); if (!c) return;
+  if (!confirm('Hapus pertemuan terakhir beserta absen, tugas, dan nilai quiz-nya?')) return;
+  const { m, k } = c, n = k.pert.length; k.pert.pop(); saveMk(m);
+  const a = st.pr(), d = a[m.id] || {};
+  studentsOf(m.id, k.id).forEach(u => { const v = d[u.email]; if (v) ['att', 'sub', 'quiz', 'qt', 'nilai', 'qext', 'kembali'].forEach(f => { if (v[f]) delete v[f][n]; }); });
+  st.setPr(a); render();
+}
+// Pengumpulan: siapa saja yang sudah mengirim tugas / mengerjakan quiz
+let KUM = [], PVJ = 0;
+function kumpulModal(n) {
+  freePv();
+  const c = ctxKelas(); if (!c) return;
+  const { m, k } = c, x = k.pert.find(q => q.n === n), ss = studentsOf(m.id, k.id); KUM = ss.map(u => u.email);
+  // daftar lampiran satu partisipan; kind: sub = tugas, qx = hasil quiz
+  const lampRows = (items, i, kind) => items.map((it, j) => it.tipe === 'link'
+    ? `<div class="kf">🔗 <span class="lk">${esc(it.url)}</span><button class="btn sm" onclick="bukaLinkTugas(${n},${i},${j},'${kind}')">Buka link</button></div>`
+    : `<div class="kf">📄 ${esc(it.nama)}${it.size ? ' <small>(' + sizeTxt(it.size) + ')</small>' : ''}<button class="btn sm" onclick="lihatTugas(${n},${i},${j},'${kind}')">Lihat</button><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j},'${kind}')">Unduh</button></div>`).join('');
+  const nama = (u, chips, extra) => `<div class="krow"><div class="kh"><div><b>${esc(u.nama)}</b><div class="quote">${esc(u.id)}</div></div><div style="text-align:right">${chips}</div></div>${extra || ''}</div>`;
+  let h = `<h3>Pengumpulan · Pertemuan ${n}</h3><div class="quote">${esc(x.topik)} · ${esc(k.nama)}</div>`;
+  if (!ss.length) h += '<p class="empty">Belum ada partisipan yang bergabung.</p>';
+  else {
+    if (x.tugas) {
+      const sent = ss.filter(u => P(m.id, u.email).sub[n]).length, graded = ss.filter(u => P(m.id, u.email).nilai[n]).length;
+      h += `<h4 style="margin:16px 0 4px">Tugas · ${sent}/${ss.length} sudah mengirim · ${graded} dinilai ${dlChip(x.tugasDl)}</h4>` + ss.map((u, i) => {
+        const p = P(m.id, u.email), f = p.sub[n], nl = p.nilai[n];
+        if (!f) return nama(u, p.kembali[n] ? '<span class="chip c-iz">Dikembalikan</span>' : '<span class="chip c-wait">Belum mengirim</span>', p.kembali[n] ? '<div class="quote" style="margin-top:6px">Menunggu dikirim ulang</div>' : '');
+        const its = itemsOf(f);
+        return nama(u, nl ? `<span class="chip c-ok">Sudah dinilai${nl.skor != null ? ' · ' + nl.skor : ''}</span>` : '<span class="chip c-iz">Perlu dinilai</span>',
+          `${subAt(f) ? `<div class="quote" style="margin-top:6px">Dikirim ${fmtDt(subAt(f))} · ${its.length} lampiran</div>` : ''}${its.length ? lampRows(its, i, 'sub') : '<div class="kf"><span class="quote">Berkas lama tidak tersimpan. Partisipan sudah diminta mengirim ulang.</span></div>'}
+        <div class="kn"><input id="nl-${i}" type="number" min="0" max="100" placeholder="Nilai 0–100 (boleh kosong)" value="${nl && nl.skor != null ? nl.skor : ''}" aria-label="Nilai ${esc(u.nama)}"><input id="ct-${i}" placeholder="Catatan (opsional)" maxlength="120" value="${nl ? esc(nl.cat || '') : ''}" aria-label="Catatan untuk ${esc(u.nama)}"><button class="btn lime sm" onclick="simpanNilai(${n},${i})">${nl ? 'Perbarui' : 'Simpan penilaian'}</button><button class="btn ghost sm" onclick="kembalikan(${n},${i})">↩ Kembalikan</button></div>`);
+      }).join('');
+    }
+    if (adaQuiz(x)) {
+      const done = ss.filter(u => quizDone(P(m.id, u.email), x)).length;
+      h += `<h4 style="margin:16px 0 4px">Quiz · ${done}/${ss.length} selesai ${dlChip(x.quizDl)}</h4>` + ss.map((u, i) => {
+        const p = P(m.id, u.email), qe = p.qext[n], chips = [];
+        if (x.quiz.length) chips.push(p.quiz[n] != null ? `<span class="chip c-bl">Nilai ${p.quiz[n]}</span>` : '<span class="chip c-wait">Soal belum dikerjakan</span>');
+        let extra = '';
+        if (qlOf(x).length) {
+          if (qe) { const its = itemsOf(qe); chips.push('<span class="chip c-ok">Selesai</span>'); extra = `<div class="quote" style="margin-top:6px">${its.length ? 'Hasil dikirim ' : 'Ditandai selesai '}${fmtDt(qe.at)}${its.length ? ' · ' + its.length + ' lampiran' : ''}</div>${lampRows(its, i, 'qx')}`; }
+          else chips.push('<span class="chip c-wait">Belum selesai</span>');
+        }
+        return nama(u, chips.join(' '), extra);
+      }).join('');
+    }
+  }
+  modal(h + '<div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">← Kembali ke pertemuan</button></div>');
+}
+function lihatTugas(n, i, j, kind) {
+  j = j || 0; PVJ = j; kind = kind || 'sub';
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const { m } = c, u = Auth.find(KUM[i]), p = P(m.id, KUM[i]), fld = kind === 'qx' ? p.qext[n] : p.sub[n], nl = p.nilai[n], its = itemsOf(fld), it = its[j];
+  if (!it || it.tipe === 'link') { toast('Berkas tidak tersimpan'); return; }
+  freePv();
+  const tabs = its.length > 1 ? `<div class="row" style="margin-top:10px">${its.map((q, jj) => `<button class="btn ${jj === j ? '' : 'ghost'} sm" onclick="${q.tipe === 'link' ? `bukaLinkTugas(${n},${i},${jj},'${kind}')` : `lihatTugas(${n},${i},${jj},'${kind}')`}">${q.tipe === 'link' ? '🔗 Link' : '📄 ' + esc(q.nama.length > 22 ? q.nama.slice(0, 20) + '…' : q.nama)}</button>`).join('')}</div>` : '';
+  const ctrl = kind === 'qx' ? `<div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j},'qx')">Unduh</button></div>`
+    : `<div class="kn" style="margin-top:12px"><input id="nl-${i}" type="number" min="0" max="100" placeholder="Nilai 0–100 (boleh kosong)" value="${nl && nl.skor != null ? nl.skor : ''}" aria-label="Nilai ${esc(u.nama)}"><input id="ct-${i}" placeholder="Catatan (opsional)" maxlength="120" value="${nl ? esc(nl.cat || '') : ''}" aria-label="Catatan untuk ${esc(u.nama)}"><button class="btn lime sm" onclick="simpanNilai(${n},${i},true)">${nl ? 'Perbarui' : 'Simpan penilaian'}</button><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j})">Unduh</button><button class="btn ghost sm" onclick="kembalikan(${n},${i},true)">↩ Kembalikan</button></div>`;
+  modal(`<button class="btn ghost" onclick="kumpulModal(${n})">← Kembali ke daftar pengumpulan</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${esc(u.nama)} · ${esc(u.id)}${subAt(fld) ? ' · ' + fmtDt(subAt(fld)) : ''}${kind === 'qx' && fld && fld.at ? ' · ' + fmtDt(fld.at) : ''}</div>${tabs}
+  ${previewHtml(it)}${ctrl}`, 'wide');
+}
+function unduhTugas(n, i, j, kind) {
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const p = P(c.m.id, KUM[i]), it = itemsOf(kind === 'qx' ? p.qext[n] : p.sub[n])[j || 0];
+  if (it && it.tipe !== 'link') bukaBerkas(it, true);
+}
+function bukaLinkTugas(n, i, j, kind) {
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const p = P(c.m.id, KUM[i]), it = itemsOf(kind === 'qx' ? p.qext[n] : p.sub[n])[j || 0];
+  if (it && it.tipe === 'link') bukaLink(it.url);
+}
+function kembalikan(n, i, pv) {
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const em = KUM[i], u = Auth.find(em), p = P(c.m.id, em), f = p.sub[n], nama = u ? u.nama : 'partisipan';
+  if (!f) { toast('Partisipan belum mengirim tugas'); return; }
+  if (!confirm('Kembalikan tugas ' + nama + '?\nBerkas yang sudah dikirim dihapus dan nilainya dibatalkan, lalu partisipan bisa mengirim ulang.\nIsi kolom Catatan dulu kalau ingin memberi alasan.')) return;
+  const ct = document.getElementById('ct-' + i);
+  p.kembali[n] = { cat: ct ? ct.value.trim() : '', lama: subName(f), at: Date.now() };
+  delete p.sub[n]; delete p.nilai[n]; setP(c.m.id, em, p);
+  toast('Tugas dikembalikan ke ' + nama); render(); kumpulModal(n);
+}
+// Pengajar memberi nilai (0–100, boleh dikosongkan = hanya ditandai "sudah dinilai") dan catatan
+function simpanNilai(n, i, pv) {
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const raw = document.getElementById('nl-' + i).value.trim(), cat = document.getElementById('ct-' + i).value.trim();
+  let skor = null;
+  if (raw !== '') { skor = Number(raw); if (!(skor >= 0 && skor <= 100)) { toast('Nilai harus antara 0 dan 100'); return; } skor = Math.round(skor * 10) / 10; }
+  const p = P(c.m.id, KUM[i]);
+  if (!p.sub[n]) { toast('Partisipan belum mengirim tugas'); return; }
+  p.nilai[n] = { skor, cat, at: Date.now() }; setP(c.m.id, KUM[i], p);
+  toast('Penilaian disimpan'); render(); if (pv) lihatTugas(n, i, PVJ); else kumpulModal(n);
+}
+let ABS = [];
+function absenModal(n) {
+  const c = ctxKelas(); if (!c) return;
+  const { m, k } = c, ss = studentsOf(m.id, k.id); ABS = ss.map(u => u.email);
+  const opt = [['', 'Belum diabsen'], ['H', 'Hadir'], ['I', 'Izin'], ['A', 'Alpa']];
+  modal(`<h3>Absensi pertemuan ${n}</h3><div class="quote">${esc(k.nama)}. Kamu bisa mengubah absensi kapan saja, termasuk setelah batas waktu absen mandiri lewat.</div>
+  ${ss.length ? ss.map((u, i) => { const cur = P(m.id, u.email).att[n] || ''; return `<div class="arow"><div><b>${esc(u.nama)}</b><div class="quote">${esc(u.id)}</div></div><select id="ab-${i}" aria-label="Absensi ${esc(u.nama)}">${opt.map(([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`; }).join('') : '<p class="empty">Belum ada partisipan yang bergabung.</p>'}
+  <div class="row" style="margin-top:14px">${ss.length ? `<button class="btn lime" onclick="saveAbsen(${n})">Simpan absensi</button>` : ''}<button class="btn ghost" onclick="tutupModal()">← Kembali ke pertemuan</button></div>`);
+}
+function saveAbsen(n) {
+  const c = ctxKelas(); if (!c) return;
+  ABS.forEach((em, i) => { const v = document.getElementById('ab-' + i).value, p = P(c.m.id, em); if (v) p.att[n] = v; else delete p.att[n]; setP(c.m.id, em, p); });
+  tutupModal(); toast('Absensi disimpan'); render();
+}
+
+// ---------- BUAT MATA KULIAH & MASUK KELAS ----------
+function mkModal(id) {
+  const m = id ? getMk(id) : null;
+  if (id && (!m || m.dosen !== U.email)) return;
+  modal(`<h3>${m ? 'Ubah pelajaran' : 'Buat pelajaran'}</h3><div class="quote">${m ? 'Perubahan langsung terlihat oleh partisipan di kelasmu.' : 'Setelah dibuat, kamu bisa membuat kelas A, B, C… beserta kodenya.'}</div>
+  <div class="fg" style="margin-top:12px"><label class="f">Nama pelajaran<input id="mNama" placeholder="Pemrograman Berorientasi Objek" maxlength="60" value="${m ? esc(m.nama) : ''}"></label>
+  <div class="two"><label class="f">ID pelajaran (opsional)<input id="mKode" placeholder="mis. PLJ-01" maxlength="12" value="${m ? esc(m.kode || '') : ''}"></label><label class="f">Jadwal (opsional)<input id="mJadwal" placeholder="Selasa, 08.00–10.30" maxlength="40" value="${m ? esc(m.jadwal || '') : ''}"></label></div>
+  <p class="err" id="mErr" role="alert"></p>
+  <div class="row"><button class="btn lime" onclick="createMk(${m ? `'${m.id}'` : ''})">${m ? 'Simpan perubahan' : 'Buat pelajaran'}</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
+  $('#mNama').focus();
+}
+function createMk(id) {
+  const nama = $('#mNama').value.trim(), e = $('#mErr'), old = id ? getMk(id) : null;
+  if (id && (!old || old.dosen !== U.email)) return;
+  if (!nama) { e.textContent = 'Nama pelajaran wajib diisi.'; return; }
+  if (st.mk().some(m => m.dosen === U.email && m.id !== id && m.nama.toLowerCase() === nama.toLowerCase())) { e.textContent = 'Kamu sudah punya pelajaran dengan nama ini.'; return; }
+  const data = { nama, kode: $('#mKode').value.trim(), jadwal: $('#mJadwal').value.trim() };
+  if (old) {
+    Object.assign(old, data);
+    if (!saveMk(old)) { e.textContent = 'Gagal menyimpan data.'; return; }
+    tutupModal(); toast('Pelajaran diperbarui'); render(); return;
+  }
+  const m = { id: uid('mk'), ...data, dosen: U.email, dosenNama: U.nama, kelas: [] };
+  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  tutupModal(); toast('Pelajaran dibuat. Sekarang buat kelasnya.'); go('course', m.id);
+}
+const merah = 'style="border-color:#e8a0a0;background:#fdeaea"';
+function hapusMkModal(id) {
+  const m = getMk(id); if (!m || m.dosen !== U.email) return;
+  modal(`<h3>⚠️ Hapus pelajaran “${esc(m.nama)}”?</h3><div class="warnbox" ${merah}>Tindakan ini <b>tidak bisa dibatalkan</b>.</div>
+  <ul class="dampak"><li><b>${m.kelas.length} kelas</b> dan <b>${totalPert(m)} pertemuan</b> (materi, tugas, quiz) ikut terhapus.</li>
+  <li><b>${studentsOf(m.id).length} partisipan</b> keluar dari pelajaran ini dan kehilangan absen, tugas yang dikirim, nilai, dan hasil quiz mereka.</li></ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusMk('${m.id}')">Ya, hapus pelajaran</button></div>`);
+}
+function hapusMk(id) {
+  const m = getMk(id); if (!m || m.dosen !== U.email) return;
+  st.setMk(st.mk().filter(x => x.id !== id)); st.setJn(st.jn().filter(j => j.mkId !== id));
+  const pr = st.pr(); delete pr[id]; st.setPr(pr);
+  tutupModal(); toast('Pelajaran dihapus'); go('courses');
+}
+function kelasModal() {
+  const c = ctxKelas(); if (!c) return; const { k } = c;
+  modal(`<h3>Ubah kelas</h3><div class="quote">Partisipan yang sudah bergabung tetap berada di kelas ini. Kode baru hanya berlaku untuk yang bergabung berikutnya.</div>
+  <div class="fg" style="margin-top:12px"><label class="f">Nama kelas<input id="eKNama" value="${esc(k.nama)}" maxlength="30"></label>
+  <label class="f">Kode kelas<input id="eKKode" value="${esc(k.kode)}" maxlength="16" style="text-transform:uppercase"></label>
+  <p class="err" id="eKErr" role="alert"></p>
+  <div class="row"><button class="btn lime" onclick="simpanKelas()">Simpan perubahan</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
+}
+function simpanKelas() {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, e = $('#eKErr');
+  const nama = $('#eKNama').value.trim(), kode = $('#eKKode').value.trim().toUpperCase();
+  if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
+  if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
+  if (st.mk().some(q => q.kelas.some(x => x.kode === kode && x.id !== k.id))) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return; }
+  k.nama = nama; k.kode = kode;
+  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  tutupModal(); toast('Kelas diperbarui'); render();
+}
+function hapusKelasModal() {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c;
+  modal(`<h3>⚠️ Hapus kelas “${esc(k.nama)}”?</h3><div class="warnbox" ${merah}>Tindakan ini <b>tidak bisa dibatalkan</b>.</div>
+  <ul class="dampak"><li><b>${k.pert.length} pertemuan</b> (materi, tugas, quiz) di kelas ini ikut terhapus.</li>
+  <li><b>${studentsOf(m.id, k.id).length} partisipan</b> keluar dari kelas ini dan kehilangan absen, tugas yang dikirim, nilai, dan hasil quiz mereka.</li>
+  <li>Kode <b>${esc(k.kode)}</b> tidak bisa dipakai lagi untuk bergabung.</li></ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusKelas()">Ya, hapus kelas</button></div>`);
+}
+function hapusKelas() {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, ss = studentsOf(m.id, k.id);
+  m.kelas = m.kelas.filter(x => x.id !== k.id); saveMk(m);
+  st.setJn(st.jn().filter(j => !(j.mkId === m.id && j.kelasId === k.id)));
+  const pr = st.pr(); ss.forEach(u => { if (pr[m.id]) delete pr[m.id][u.email]; }); st.setPr(pr);
+  tutupModal(); toast('Kelas dihapus'); go('course', m.id);
+}
+// Partisipan keluar dari pelajaran (= keluar dari kelas yang dimasuki)
+function keluarModal(mkId) {
+  const m = getMk(mkId); if (!m || !myMk().some(x => x.id === mkId)) return;
+  const p = P(mkId, U.email), nA = Object.keys(p.att).length, nT = Object.keys(p.sub).length, nQ = Object.keys(p.quiz).length;
+  modal(`<h3>Keluar dari “${esc(m.nama)}”?</h3><div class="warnbox" ${merah}>Data belajarmu di pelajaran ini akan <b>dihapus</b>.</div>
+  <ul class="dampak"><li>${nA} catatan absen, ${nT} tugas yang sudah dikirim, nilai, dan ${nQ} hasil quiz-mu ikut terhapus.</li>
+  <li>Kamu bisa bergabung lagi dengan kode kelas dari pengajar, tetapi data lama tidak kembali.</li></ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarMk('${m.id}')">Ya, keluar dari pelajaran</button></div>`);
+}
+function keluarMk(mkId) {
+  if (!myMk().some(x => x.id === mkId)) return;
+  st.setJn(st.jn().filter(j => !(j.mhs === U.email && j.mkId === mkId)));
+  const pr = st.pr(); if (pr[mkId]) delete pr[mkId][U.email]; st.setPr(pr);
+  Object.keys(S.draft).forEach(k => { if (k.startsWith(mkId + '-')) delete S.draft[k]; });
+  tutupModal(); toast('Kamu sudah keluar dari pelajaran'); go('courses');
+}
+function joinModal() {
+  modal(`<h3>Masuk kelas</h3><div class="quote">Masukkan kode kelas yang diberikan pengajarmu.</div>
+  <div class="fg" style="margin-top:12px"><label class="f">Kode kelas<input id="jKode" placeholder="contoh: PBO-A" maxlength="16" autocomplete="off" style="text-transform:uppercase"></label>
+  <p class="err" id="jErr" role="alert"></p>
+  <div class="row"><button class="btn lime" onclick="joinKelas()">Masuk kelas</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
+  $('#jKode').focus();
+}
+function joinKelas() {
+  const kode = $('#jKode').value.trim().toUpperCase(), e = $('#jErr');
+  if (!kode) { e.textContent = 'Masukkan kode kelas.'; return; }
+  let hit = null;
+  for (const m of st.mk()) { const k = m.kelas.find(x => x.kode === kode); if (k) { hit = { m, k }; break; } }
+  if (!hit) { e.textContent = 'Kode kelas tidak ditemukan. Periksa kembali kode dari pengajarmu.'; return; }
+  const jn = st.jn();
+  if (jn.some(j => j.mhs === U.email && j.mkId === hit.m.id)) { e.textContent = 'Kamu sudah bergabung di pelajaran ini.'; return; }
+  jn.push({ mhs: U.email, mkId: hit.m.id, kelasId: hit.k.id, at: Date.now() });
+  if (!st.setJn(jn)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  tutupModal(); toast('Berhasil bergabung: ' + hit.m.nama); go('courses');
+}
+
+// ---------- PROGRES & PENGATURAN ----------
+function progress() {
+  const L = myMk(), top = '<h1>Progres belajar</h1>';
+  if (!L.length) return top + empty('📈', 'Belum ada progres', isDosen ? 'Progres kelas muncul setelah kamu membuat kelas dan partisipan bergabung.' : 'Progres muncul setelah kamu bergabung ke kelas.', isDosen ? btnMk : btnJoin);
+  const bar = (l, r, p, c) => `<div class="meta"><span>${l}</span><span>${r}</span></div><div class="bar" style="margin-top:4px"><i style="width:${p}%${c ? ';background:' + c : ''}"></i></div>`;
+  return top + '<h2>Per pelajaran</h2><div class="courses">' + L.map(m => {
+    if (!isDosen) {
+      const s2 = stats(m, U.email), p = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
+      return `<div class="card"><b>${esc(m.nama)}</b>${bar('Kehadiran', p + '%', p)}${bar('Tugas & quiz selesai', s2.done + '/' + s2.tasks, s2.tasks ? s2.done / s2.tasks * 100 : 0, 'var(--amb)')}</div>`;
+    }
+    const rows = m.kelas.map(k => {
+      const ss = studentsOf(m.id, k.id), tasks = k.pert.reduce((a, x) => a + (x.tugas ? 1 : 0) + (adaQuiz(x) ? 1 : 0), 0); let h = 0, d = 0;
+      ss.forEach(u => { const s2 = stats(m, u.email); h += s2.hadir; d += s2.done; });
+      const ap = ss.length && k.pert.length ? Math.round(h / (ss.length * k.pert.length) * 100) : 0, tp = ss.length && tasks ? Math.round(d / (ss.length * tasks) * 100) : 0;
+      return `<div class="meta"><span><b>${esc(k.nama)}</b> · ${ss.length} partisipan</span><span>Hadir ${ap}% · Tugas/quiz ${tp}%</span></div>`;
+    }).join('') || '<p class="empty">Belum ada kelas.</p>';
+    return `<div class="card"><b>${esc(m.nama)}</b>${rows}</div>`;
+  }).join('') + '</div>';
+}
+// Pengaturan: akun, tampilan, pengingat, penyimpanan, panduan, bantuan
+function setPref(k, v) {
+  U.pref = { ...prefOf(U), [k]: v }; Auth.update(U.email, { pref: U.pref });
+  applyPref(); render(); toast('Pengaturan disimpan');
+}
+function storUsage() {
+  let c = 0;
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('lms_')) c += k.length + (localStorage.getItem(k) || '').length; } } catch (e) {}
+  return c;
+}
+function settings() {
+  const pf = prefOf(U), isD = isDosen;
+  const seg = (v, l) => `<button class="seg ${pf.fs === v ? 'on' : ''}" onclick="setPref('fs','${v}')" aria-pressed="${pf.fs === v}">${l}</button>`;
+  const sw = (k, l, d) => `<label class="chk sw"><input type="checkbox" ${pf[k] !== false ? 'checked' : ''} onchange="setPref('${k}',this.checked)"><span><b>${l}</b><div class="quote">${d}</div></span></label>`;
+  const c = storUsage(), pct = Math.min(100, c / 5e6 * 100), mb = (c * 2 / 1048576).toFixed(1).replace('.', ',');
+  const g = (t, d) => `<details class="guide"><summary>${t}</summary><p>${d}</p></details>`;
+  const panduan = isD ? g('Membuat pelajaran dan kelas', 'Buka menu Pelajaran lalu Buat pelajaran. Di dalamnya buat kelas (misalnya A, B, C) dan bagikan kode kelasnya ke partisipan.')
+    + g('Menambah pertemuan', 'Buka kelas, tekan Info selengkapnya, lalu tambah pertemuan. Centang Materi (maks. 5 file atau link), Tugas, atau Quiz, dan atur batas waktu serta batas absen mandiri.')
+    + g('Memeriksa dan menilai tugas', 'Tekan Pengumpulan pada pertemuan. Kamu bisa melihat file langsung tanpa mengunduh, memberi nilai dan catatan, atau menekan Kembalikan agar partisipan mengerjakan ulang.')
+    + g('Mengabsen', 'Tekan Absensi untuk mengubah status kehadiran kapan saja, termasuk setelah batas absen mandiri lewat.')
+    + g('Mengubah atau menghapus', 'Pelajaran dan kelas bisa diubah atau dihapus dari halamannya. Penghapusan bersifat permanen dan ikut menghapus pertemuan serta data partisipan di dalamnya.')
+    : g('Masuk kelas', 'Buka menu Pelajaran lalu Masuk kelas, dan masukkan kode kelas dari pengajarmu.')
+    + g('Absen', 'Saat pengajar membuka absen, tekan Absen sekarang sebelum waktunya habis. Jika terlewat, minta pengajar mengabsenmu.')
+    + g('Membaca materi', 'Buka pertemuan lalu tekan Lihat untuk membuka materi langsung di halaman tanpa mengunduh. Link dibuka di tab baru.')
+    + g('Mengirim tugas', 'Tambahkan file atau link (maksimal 5), hapus yang salah, lalu tekan Kirim tugas. Tugas yang dikembalikan pengajar bisa dikirim ulang.')
+    + g('Mengerjakan quiz', 'Quiz berisi soal bisa langsung dikerjakan. Untuk quiz berupa link atau file, kerjakan di link yang diberikan lalu tekan Tandai selesai atau kirim hasilmu.')
+    + g('Keluar dari pelajaran', 'Buka halaman pelajarannya lalu tekan Keluar dari pelajaran. Absen, tugas, dan nilaimu di pelajaran itu akan terhapus.');
+  return `<h1>Pengaturan</h1><p class="quote">Atur akun, tampilan, pengingat, dan data aplikasimu.</p>
+  <div class="pcols">
+    <div class="card"><b>Akun</b><dl class="kv"><dt>Nama</dt><dd>${esc(U.nama)}</dd><dt>Peran</dt><dd>${esc(U.role)} · ${esc(U.id)}</dd><dt>Gmail</dt><dd>${esc(U.email)} ${U.verified ? '<span class="chip c-ok">Terverifikasi</span>' : '<span class="chip c-no">Belum terverifikasi</span>'}</dd></dl>
+      <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="go('profil')">Buka profil</button><button class="btn ghost dng" onclick="Auth.logout()">Keluar</button></div></div>
+    <div class="card"><b>Tampilan</b><p class="quote" style="margin:6px 0 12px">Ukuran teks pada isi halaman. Berlaku di semua halaman.</p><div class="segs" role="group" aria-label="Ukuran teks">${seg('kecil', 'Kecil')}${seg('normal', 'Normal')}${seg('besar', 'Besar')}</div>
+      <p class="lock">Contoh: tulisan ini berubah ukurannya sesuai pilihanmu.</p></div>
+    <div class="card"><b>Pengingat</b>${isD ? sw('nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di beranda.')
+      : sw('ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di beranda saat pengajar membuka absen.') + sw('dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batasnya kurang dari 24 jam di beranda.')}</div>
+    <div class="card"><b>Penyimpanan</b><div class="meter ${pct > 80 ? 'hi' : ''}" role="img" aria-label="Penyimpanan terpakai ${pct.toFixed(0)} persen"><i style="width:${pct}%"></i></div>
+      <div class="quote">Terpakai sekitar ${mb} MB dari ±5 MB penyimpanan browser (${pct.toFixed(0)}%).${pct > 80 ? ' <b style="color:var(--red)">Hampir penuh. Hapus berkas besar atau pakai link.</b>' : ''}</div>
+      <p class="lock">Data saat ini tersimpan di browser ini saja.</p></div>
+  </div>
+  <div class="card pfull"><b>Panduan singkat</b><div style="margin-top:10px">${panduan}</div></div>
+  <div class="card pfull"><b>Bantuan & tentang</b><p class="quote" style="margin:6px 0 12px">Ada kendala atau saran? Hubungi kami.</p>
+    <div class="row"><a class="btn ghost" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="btn ghost" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
+    <p class="lock">KelasBelajar versi 1.0 · Data tersimpan di browser ini.</p></div>`;
+}
+
+// ---------- RENDER ----------
+function renderNav() {
+  const it = [['home', '🏠', 'Beranda'], ['courses', '📚', 'Pelajaran'], ['progress', '📈', 'Progres'], ['settings', '⚙️', 'Pengaturan'], ['profil', '👤', 'Profil']];
+  const inCourses = ['courses', 'course', 'kelas', 'pert'].includes(S.view);
+  $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" onclick="go('${v}')">${i} ${l}</button>`).join('');
+}
+function go(v, id) {
+  if (v === 'profil') { location.href = 'profil.html'; return; }
+  S.view = v; S.edit = null; S.pfKey = null; if (id) S.cid = id;
+  render(); window.scrollTo(0, 0);
+}
+function render() {
+  renderNav();
+  const v = S.view;
+  $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
+}
+function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
+function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
+function initBeranda() {
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
+  migrate();
+  const h = location.hash.slice(1);
+  if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
+  setMe(U);
+  render();
+  // hitung mundur absen; saat habis, tampilan partisipan dimuat ulang (pengajar: hanya angka, agar form tidak terhapus)
+  setInterval(() => {
+    let habis = false;
+    document.querySelectorAll('[data-exp]').forEach(el => {
+      const ms = +el.getAttribute('data-exp') - Date.now();
+      if (ms <= 0) { if (isDosen) el.textContent = '00:00'; else habis = true; } else el.textContent = fmt(ms);
+    });
+    if (habis) render();
+  }, 1000);
+}
+
+/* ===== HALAMAN LOGIN ===== */
+function initLogin(){
+
+// Kalau sudah login, langsung ke beranda
+if (Auth.session()) location.replace('index.html');
+if (new URLSearchParams(location.search).has('dihapus')) toast('Akun kamu sudah dihapus permanen.');
+
+function showTab(reg) {
+  $('#fLogin').hidden = reg;
+  $('#fReg').hidden = !reg;
+  $('#tLogin').classList.toggle('on', !reg);
+  $('#tReg').classList.toggle('on', reg);
+  $('#tLogin').setAttribute('aria-selected', !reg);
+  $('#tReg').setAttribute('aria-selected', reg);
+}
+$('#tLogin').onclick = () => showTab(false);
+$('#tReg').onclick = () => showTab(true);
+$('#toReg').onclick = e => { e.preventDefault(); showTab(true); };
+$('#toLogin').onclick = e => { e.preventDefault(); showTab(false); };
+
+function role() { return document.querySelector('input[name=role]:checked').value; }
+
+// ---- Masuk ----
+$('#fLogin').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = $('#lEmail').value, pass = $('#lPass').value;
+  const u = Auth.find(email);
+  if (!u || u.hash !== await Auth.hash(pass)) { $('#eLogin').textContent = 'Email atau kata sandi salah.'; return; }
+  Auth.login(u.email);
+  location.href = 'index.html';
+});
+
+// ---- Daftar ----
+$('#fReg').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = m => { $('#eReg').textContent = m; };
+  const d = {
+    nama: $('#rNama').value.trim(), email: $('#rEmail').value.trim().toLowerCase(),
+    id: $('#rId').value.trim(), hp: $('#rHp').value.trim(), prodi: $('#rProdi').value.trim(),
+    role: role()
+  };
+  const p1 = $('#rPass').value, p2 = $('#rPass2').value;
+  if (!d.nama) return err('Nama lengkap wajib diisi.');
+  if (!isGmail(d.email)) return err('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
+  if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return err('ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
+  if (d.prodi.length < 3) return err('Minat belajar wajib diisi (minimal 3 karakter).');
+  if (!/^0\d{8,13}$/.test(d.hp)) return err('Nomor HP tidak valid. Contoh: 081234567890.');
+  if (p1.length < 8) return err('Kata sandi minimal 8 karakter.');
+  if (p1 !== p2) return err('Konfirmasi kata sandi tidak sama.');
+  if (!$('#rOk').checked) return err('Centang pernyataan bahwa nama lengkap, peran, dan minat belajar sudah benar.');
+  if (Auth.find(d.email)) return err('Email ini sudah terdaftar. Silakan masuk.');
+
+  const list = Auth.users();
+  list.push({ ...d, hash: await Auth.hash(p1), verified: false, vcode: null, dibuat: Date.now() });
+  if (!Auth.saveAll(list)) return err('Gagal menyimpan data. Pastikan penyimpanan browser aktif.');
+  Auth.login(d.email);
+  location.href = 'profil.html?baru=1';   // lanjut verifikasi Gmail di profil
+});
+
+}
+
+/* ===== HALAMAN PROFIL ===== */
+function initProfil(){
+const TTL = 5 * 60 * 1000;      // kode berlaku 5 menit
+const COOLDOWN = 30 * 1000;     // jeda kirim ulang 30 detik
+const MAX_TRIES = 5;
+let editing = null, pwOpen = false, timer = null;   // editing: 'data' | 'kontak' | null
+
+if (!Auth.requireLogin()) return;
+$('#bOut').onclick = () => Auth.logout();
+
+function render() {
+  const u = Auth.session();
+  if (!u) { location.replace('login.html'); return; }
+  const idLabel = 'ID';
+  setMe(u);
+
+  const vc = u.vcode && u.vcode.exp > Date.now() ? u.vcode : null;
+  const baru = new URLSearchParams(location.search).has('baru') && !u.verified;
+
+  // Status "terverifikasi" cukup di lencana bawah nama. Kartu verifikasi hanya muncul bila Gmail belum diverifikasi.
+  const verif = u.verified ? '' : `<div class="card pfull">
+        <div class="row" style="justify-content:space-between"><b>Verifikasi Gmail</b><span class="chip c-no">Belum terverifikasi</span></div>
+        <p class="quote">Tekan tombol di bawah. Kode 6 digit akan dikirim ke <b>${esc(u.email)}</b>, lalu masukkan kodenya di sini.</p>
+        <div class="row"><button class="btn lime" id="bSend">${vc ? 'Kirim ulang kode' : 'Verifikasi Gmail'}</button>
+        ${vc ? '<button class="btn ghost" id="bInbox">Buka kotak masuk (simulasi)</button>' : ''}</div>
+        ${vc ? `<div class="row" style="margin-top:16px"><input id="kode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code" aria-label="Kode verifikasi 6 digit" class="kode"><button class="btn" id="bCek">Konfirmasi kode</button></div>
+        <p class="err" id="eKode" role="alert"></p>` : ''}
+      </div>`;
+
+  // Data diri terkunci setelah pendaftaran; hanya Kontak (No. HP dan Gmail) yang bisa diubah.
+  const dataCard = `<div class="card"><b>Data diri</b>
+        <dl class="kv">
+          <dt>Nama lengkap</dt><dd>${esc(u.nama)}</dd>
+          <dt>Peran</dt><dd>${esc(u.role)}</dd>
+          <dt>${idLabel}</dt><dd>${esc(u.id)}</dd>
+          <dt>Minat belajar</dt><dd>${esc(u.prodi)}</dd>
+        </dl>
+        <p class="lock">🔒 Nama lengkap, peran, dan minat belajar tidak dapat diubah setelah pendaftaran.</p></div>`;
+
+  const kontakCard = editing === 'kontak'
+    ? `<form id="fKontak" class="card" novalidate><b>Ubah kontak</b>
+        <label class="f">No. HP<input id="eHp" value="${esc(u.hp)}" inputmode="tel" maxlength="16"></label>
+        <label class="f">Gmail<input type="email" id="eEmail" value="${esc(u.email)}" autocomplete="email"></label>
+        <p class="lock" style="margin:0">Jika Gmail diganti, kamu akan masuk dengan Gmail baru dan perlu memverifikasinya ulang.</p>
+        <p class="err" id="eKontak" role="alert"></p>
+        <div class="row"><button class="btn lime" type="submit">Simpan</button><button class="btn ghost" type="button" id="bBatalK">Batal</button></div></form>`
+    : `<div class="card"><div class="row" style="justify-content:space-between"><b>Kontak saya</b><button class="btn ghost" id="bEditK">Ubah</button></div>
+        <dl class="kv"><dt>No. HP</dt><dd>${esc(u.hp)}</dd><dt>Email</dt><dd>${esc(u.email)}</dd></dl>
+        <p class="lock">✏️ No. HP dan Gmail masih bisa diubah. Gmail dipakai untuk masuk dan verifikasi.</p></div>`;
+
+  const r = ringkas(u), isD = u.role === 'Pengajar';
+  const aktivitas = `<div class="card"><b>${isD ? 'Ringkasan mengajar' : 'Ringkasan belajar'}</b>
+    <div class="tiles">${r.tiles.map(([n, l]) => `<div class="tile"><b>${n}</b><span>${l}</span></div>`).join('')}</div></div>`;
+
+  const tgl = u.dibuat ? new Date(u.dibuat).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const aman = `<div class="card"><b>Keamanan akun</b>
+    <dl class="kv"><dt>Akun dibuat</dt><dd>${tgl}</dd><dt>Kata sandi</dt><dd>••••••••</dd></dl>
+    ${pwOpen ? `<form id="fPw" novalidate style="margin-top:14px">
+      <label class="f">Kata sandi saat ini<input type="password" id="pwOld" autocomplete="current-password"></label>
+      <label class="f">Kata sandi baru (min. 8 karakter)<input type="password" id="pwNew" autocomplete="new-password"></label>
+      <label class="f">Ulangi kata sandi baru<input type="password" id="pwNew2" autocomplete="new-password"></label>
+      <p class="err" id="ePw" role="alert"></p>
+      <div class="row"><button class="btn lime" type="submit">Simpan kata sandi</button><button class="btn ghost" type="button" id="bPwBatal">Batal</button></div></form>`
+      : '<button class="btn ghost" id="bPw" style="margin-top:14px">Ubah kata sandi</button>'}</div>`;
+
+  const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map(m => {
+    const d = dec(m);
+    const sub = isD ? (m.kelas.map(k => `<span class="code-pill">${esc(k.nama)} · ${esc(k.kode)}</span>`).join(' ') || '<span class="quote">Belum ada kelas</span>') : `<span class="quote">Pengajar: ${esc(m.dosenNama)}</span>`;
+    return `<div class="mkitem"><div class="ic" style="background:${d.col}">${d.ic}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
+  }).join('')}</div>`
+    : `<p class="quote" style="margin:12px 0 0">${isD ? 'Belum ada pelajaran. Buat pelajaran dan kelas di menu Pelajaran.' : 'Belum bergabung ke kelas mana pun. Masukkan kode kelas dari pengajar di menu Pelajaran.'}</p>`;
+  const mkCard = `<div class="card pfull"><div class="row" style="justify-content:space-between"><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b><a class="btn ghost" href="index.html#courses">Buka pelajaran →</a></div>${mkItems}</div>`;
+
+  const hapusCard = `<div class="card danger pfull"><div class="row" style="justify-content:space-between;align-items:center"><div style="min-width:0;flex:1 1 260px"><b>Hapus akun permanen</b><p class="quote" style="margin:4px 0 0">Menghapus akun akan menghapus seluruh data milikmu dan tidak bisa dibatalkan.</p></div><button class="btn red" id="bHapus">Hapus akun permanen</button></div></div>`;
+
+  $('#view').innerHTML = `
+    <div class="row" style="margin-bottom:6px"><div class="av big">${esc(u.nama.charAt(0).toUpperCase())}</div>
+      <div><h1 style="font-size:24px">${esc(u.nama)}</h1>
+      <span class="chip c-bl">${esc(u.role)}</span> ${u.verified ? '<span class="chip c-ok">Gmail terverifikasi</span>' : '<span class="chip c-no">Gmail belum terverifikasi</span>'}</div></div>
+    ${baru ? '<div class="card note">🎉 Akun berhasil dibuat. Satu langkah lagi: verifikasi Gmail kamu di bawah ini.</div>' : ''}
+    ${verif}
+    <div class="pcols">${dataCard}${kontakCard}${aktivitas}${aman}</div>
+    ${mkCard}${hapusCard}`;
+
+  bind(u, vc);
+}
+
+function bind(u, vc) {
+  const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+  on('#bSend', () => kirimKode(u));
+  on('#bInbox', () => inbox(u, vc.c));
+  on('#bCek', () => cekKode(u));
+  on('#bEditK', () => { editing = 'kontak'; pwOpen = false; render(); });
+  on('#bBatalK', () => { editing = null; render(); });
+  on('#bPw', () => { pwOpen = true; editing = null; render(); });
+  on('#bPwBatal', () => { pwOpen = false; render(); });
+  on('#bHapus', () => hapusModal());
+  const k = $('#kode');
+  if (k) { k.oninput = () => { k.value = k.value.replace(/\D/g, ''); }; k.onkeydown = e => { if (e.key === 'Enter') cekKode(u); }; }
+  const fk = $('#fKontak');
+  if (fk) fk.onsubmit = e => {
+    e.preventDefault();
+    const err = m => { $('#eKontak').textContent = m; };
+    const hp = $('#eHp').value.trim(), em = $('#eEmail').value.trim().toLowerCase(), ganti = em !== u.email;
+    if (!/^0\d{8,13}$/.test(hp)) return err('Nomor HP tidak valid. Contoh: 081234567890.');
+    if (!isGmail(em)) return err('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
+    if (ganti && Auth.find(em)) return err('Gmail ini sudah dipakai akun lain.');
+    Auth.update(u.email, { hp });
+    if (ganti) Auth.changeEmail(u.email, em);
+    editing = null; render();
+    toast(ganti ? 'Gmail diganti. Verifikasi ulang Gmail barumu di bawah.' : 'Kontak diperbarui');
+  };
+  const fp = $('#fPw');
+  if (fp) fp.onsubmit = async e => {
+    e.preventDefault();
+    const say = m => { $('#ePw').textContent = m; };
+    const lama = $('#pwOld').value, baru = $('#pwNew').value, ulang = $('#pwNew2').value;
+    if (await Auth.hash(lama) !== Auth.find(u.email).hash) return say('Kata sandi saat ini salah.');
+    if (baru.length < 8) return say('Kata sandi baru minimal 8 karakter.');
+    if (baru === lama) return say('Kata sandi baru harus berbeda dari yang lama.');
+    if (baru !== ulang) return say('Konfirmasi kata sandi baru tidak sama.');
+    Auth.update(u.email, { hash: await Auth.hash(baru) }); pwOpen = false; render(); toast('Kata sandi diperbarui');
+  };
+  // hitung mundur tombol kirim ulang
+  clearInterval(timer);
+  const b = $('#bSend');
+  if (b && vc) {
+    const tick = () => {
+      const s = Math.ceil((vc.sent + COOLDOWN - Date.now()) / 1000);
+      if (s > 0) { b.disabled = true; b.textContent = 'Kirim ulang (' + s + ' dtk)'; }
+      else { b.disabled = false; b.textContent = 'Kirim ulang kode'; clearInterval(timer); }
+    };
+    tick(); timer = setInterval(tick, 500);
+  }
+}
+
+function kirimKode(u) {
+  const cur = Auth.find(u.email);
+  if (cur.vcode && Date.now() - cur.vcode.sent < COOLDOWN) return;
+  const c = String(Math.floor(100000 + Math.random() * 900000));
+  Auth.update(u.email, { vcode: { c, exp: Date.now() + TTL, sent: Date.now(), tries: 0 } });
+  render();
+  inbox(u, c);
+}
+
+function cekKode(u) {
+  const cur = Auth.find(u.email), v = cur.vcode, e = $('#eKode');
+  const say = m => { e.textContent = m; };
+  if (!v || v.exp < Date.now()) return say('Kode kedaluwarsa. Kirim ulang kode.');
+  if (v.tries >= MAX_TRIES) return say('Terlalu banyak percobaan salah. Kirim ulang kode baru.');
+  const input = $('#kode').value.trim();
+  if (input.length !== 6) return say('Masukkan 6 digit kode.');
+  if (input !== v.c) {
+    v.tries++; Auth.update(u.email, { vcode: v });
+    return say('Kode salah. Sisa percobaan: ' + (MAX_TRIES - v.tries) + '.');
+  }
+  Auth.update(u.email, { verified: true, vcode: null });
+  history.replaceState(null, '', 'profil.html');
+  render(); toast('Gmail berhasil diverifikasi ✅');
+}
+
+// Hapus akun permanen: peringatan dampak + ketik HAPUS + kata sandi
+function dampak(u) {
+  const out = ['Akunmu beserta seluruh datamu (nama, kontak, kata sandi) dihapus dan <b>tidak bisa dipulihkan</b>.'];
+  if (u.role === 'Pengajar') {
+    const mine = st.mk().filter(m => m.dosen === u.email); let kelas = 0, pert = 0, mhs = 0;
+    mine.forEach(m => { kelas += m.kelas.length; mhs += studentsOf(m.id).length; m.kelas.forEach(k => { pert += k.pert.length; }); });
+    out.push(`<b>${mine.length} pelajaran</b>, <b>${kelas} kelas</b>, dan <b>${pert} pertemuan</b> (materi, tugas, quiz) ikut terhapus.`);
+    out.push(`<b>${mhs} partisipan</b> akan kehilangan kelasnya beserta absen, tugas yang dikirim, nilai, dan hasil quiz mereka.`);
+  } else {
+    const n = st.jn().filter(j => j.mhs === u.email).length;
+    out.push(`Kamu keluar dari <b>${n} pelajaran</b>; absen, tugas yang dikirim, nilai, dan hasil quiz-mu ikut terhapus.`);
+  }
+  out.push('Gmail dan ID ini bisa dipakai mendaftar lagi, tetapi data lama tidak akan kembali.');
+  return out;
+}
+function hapusModal() {
+  const u = Auth.session(); if (!u) return;
+  $('#layer').innerHTML = `<div class="modal" id="mdl"><div class="sheet" role="dialog" aria-modal="true" aria-label="Hapus akun permanen"><button class="xbtn" id="xHapus" aria-label="Tutup jendela">✕</button>
+    <h3>⚠️ Hapus akun secara permanen?</h3>
+    <div class="warnbox" style="border-color:#e8a0a0;background:#fdeaea">Tindakan ini <b>tidak bisa dibatalkan</b>. Baca dampaknya sebelum melanjutkan:</div>
+    <ul class="dampak">${dampak(u).map(t => `<li>${t}</li>`).join('')}</ul>
+    <div class="fg" style="margin-top:12px"><label class="f">Ketik <b>HAPUS</b> untuk melanjutkan<input id="hKonf" autocomplete="off"></label>
+    <label class="f">Kata sandi saat ini<input type="password" id="hPw" autocomplete="current-password"></label>
+    <p class="err" id="eHapus" role="alert"></p>
+    <div class="row"><button class="btn ghost" id="bHapusBatal">Batal, simpan akunku</button><button class="btn red" id="bHapusOk">Hapus akun permanen</button></div></div></div></div>`;
+  const tutup = () => { $('#layer').innerHTML = ''; };
+  $('#xHapus').onclick = tutup; $('#bHapusBatal').onclick = tutup;
+  $('#mdl').onclick = e => { if (e.target.id === 'mdl') tutup(); };
+  $('#bHapusOk').onclick = async () => {
+    const say = m => { $('#eHapus').textContent = m; };
+    if ($('#hKonf').value.trim() !== 'HAPUS') return say('Ketik HAPUS (huruf kapital) untuk mengonfirmasi.');
+    if (await Auth.hash($('#hPw').value) !== Auth.find(u.email).hash) return say('Kata sandi salah.');
+    Auth.deleteAccount(u.email);
+    location.href = 'login.html?dihapus=1';
+  };
+  $('#hKonf').focus();
+}
+
+// SIMULASI kotak masuk Gmail. Di sistem sungguhan, kode dikirim server lewat SMTP/API email.
+function inbox(u, code) {
+  $('#layer').innerHTML = `<div class="modal" id="mdl"><div class="sheet" role="dialog" aria-modal="true" aria-label="Kotak masuk Gmail simulasi">
+    <h3>📬 Kotak masuk Gmail (simulasi)</h3>
+    <div class="mail">
+      <div class="mh"><b>KelasBelajar</b> &lt;no-reply@kelasbelajar.test&gt;<br>Kepada: ${esc(u.email)}<br>Subjek: Kode verifikasi KelasBelajar</div>
+      <p>Halo ${esc(u.nama)},</p><p>Gunakan kode berikut untuk memverifikasi Gmail kamu:</p>
+      <div class="code">${code}</div>
+      <p class="quote">Kode berlaku 5 menit. Jangan bagikan kode ini kepada siapa pun.</p>
+    </div>
+    <p class="quote">Ini simulasi untuk demo. Email asli baru terkirim jika ada server backend yang mengirim email.</p>
+    <button class="btn lime" id="bTutup">Tutup, masukkan kode</button></div></div>`;
+  const close = () => { $('#layer').innerHTML = ''; const k = $('#kode'); if (k) k.focus(); };
+  $('#bTutup').onclick = close;
+  $('#mdl').onclick = e => { if (e.target.id === 'mdl') close(); };
+  $('#bTutup').focus();
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#layer').innerHTML = ''; });
+render();
+
+}
+
+/* ===== JALANKAN HALAMAN YANG AKTIF ===== */
+applyPref();
+const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = footerHtml();   // login: tanpa footer
+if(PAGE==='beranda')initBeranda();
+if(PAGE==='login')initLogin();
+if(PAGE==='profil')initProfil();

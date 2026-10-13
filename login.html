@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Masuk – KelasBelajar</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=17">
+</head>
+<body data-page="login">
+<div class="auth">
+  <section class="hero">
+    <div class="logo" style="border:0"><i>🎓</i><div>KelasBelajar<small>Belajar rapi, tugas beres</small></div></div>
+    <div>
+      <h2>Semua pelajaranmu, satu tempat.</h2>
+      <p>Pantau absen, kirim tugas, baca materi, dan kerjakan quiz dari pengajar.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="box">
+      <div class="tabs" role="tablist">
+        <button type="button" id="tLogin" role="tab" class="on">Masuk</button>
+        <button type="button" id="tReg" role="tab">Daftar</button>
+      </div>
+
+      <form id="fLogin" novalidate>
+        <h1>Selamat datang kembali</h1>
+        <label class="f">Email Gmail
+          <input type="email" id="lEmail" placeholder="nama@gmail.com" autocomplete="username" required>
+        </label>
+        <label class="f">Kata sandi
+          <input type="password" id="lPass" autocomplete="current-password" required>
+        </label>
+        <p class="err" id="eLogin" role="alert"></p>
+        <button class="btn lime big" type="submit">Masuk</button>
+        <p class="alt">Belum punya akun? <a href="#" id="toReg">Daftar di sini</a></p>
+      </form>
+
+      <form id="fReg" novalidate hidden>
+        <h1>Buat akun baru</h1>
+        <div class="warnbox" role="note">⚠️ <b>Perhatian sebelum mendaftar:</b> <b>nama lengkap, peran, dan minat belajar tidak dapat diubah</b> setelah akun dibuat, jadi isi dengan benar. Hanya <b>No. HP dan Gmail</b> yang masih bisa diubah nanti di halaman profil.</div>
+        <fieldset class="roles">
+          <legend>Daftar sebagai</legend>
+          <label><input type="radio" name="role" value="Partisipan" checked><span>🎒 Partisipan</span></label>
+          <label><input type="radio" name="role" value="Pengajar"><span>👩‍🏫 Pengajar</span></label>
+        </fieldset>
+        <label class="f">Nama lengkap
+          <input id="rNama" autocomplete="name" required>
+        </label>
+        <label class="f">Email Gmail
+          <input type="email" id="rEmail" placeholder="nama@gmail.com" autocomplete="email" required>
+        </label>
+        <div class="two">
+          <label class="f"><span id="idLabel">ID</span>
+            <input id="rId" maxlength="30" placeholder="ID pilihanmu, mis. AB-1024" autocomplete="off" required>
+          </label>
+          <label class="f">No. HP
+            <input id="rHp" inputmode="tel" placeholder="08xxxxxxxxxx" required>
+          </label>
+        </div>
+        <label class="f">Minat belajar
+          <input id="rProdi" maxlength="60" placeholder="mis. pemrograman web" autocomplete="off" required>
+        </label>
+        <label class="f">Kata sandi (min. 8 karakter)
+          <input type="password" id="rPass" autocomplete="new-password" required>
+        </label>
+        <label class="f">Ulangi kata sandi
+          <input type="password" id="rPass2" autocomplete="new-password" required>
+        </label>
+        <label class="chk"><input type="checkbox" id="rOk"> <span>Saya sudah memeriksa bahwa nama lengkap, peran, dan minat belajar sudah benar, dan saya memahami data ini tidak dapat diubah.</span></label>
+        <p class="err" id="eReg" role="alert"></p>
+        <button class="btn lime big" type="submit">Daftar</button>
+        <p class="alt">Sudah punya akun? <a href="#" id="toLogin">Masuk</a></p>
+      </form>
+    </div>
+  </section>
+</div>
+<script src="app.js?v=17"></script>
+</body>
+</html>
