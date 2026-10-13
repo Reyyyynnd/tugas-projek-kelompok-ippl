@@ -1,69 +1,153 @@
-/* app.js — satu file JavaScript untuk semua halaman (login, profil, beranda).
-   Halaman dipilih lewat atribut <body data-page="...">. */
+const SUPABASE_URL = 'https://absfiaukhpovsrmkzbdp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFic2ZpYXVraHBvdnNybWt6YmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzIwODMsImV4cCI6MjEwNzQwODA4M30.gDlLl6LiBJQQOoJllD6Frp4f4zf9UVAHxJSqqreEX5A';
+const BUCKET = 'lampiran';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* ===== BAGIAN BERSAMA ===== */
-const DB = {
-  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? d : v; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+const CACHE = { lms_users: [], lms_mk: [], lms_join: [], lms_prog: {} };
+const SNAP = { mk: {}, join: {}, prog: {} };
+const PCOLS = ['att', 'sub', 'quiz', 'qt', 'nilai', 'kembali', 'qext'];
+let SESS = null, WSEQ = 0, PENDING = 0, Q = Promise.resolve(), REFRESHING = false;
+
+const J = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, key) => (o[key] = x[key], o), {}) : x);
+
+function enqueue(fn) {
+  PENDING++;
+  Q = Q.then(fn)
+    .catch(e => { console.error(e); toast('Gagal menyimpan ke server: ' + ((e && e.message) || e)); setTimeout(refresh, 600); })
+    .then(() => { PENDING--; });
+}
+
+const mkRows = list => {
+  const o = {};
+  list.forEach(m => { const { id, dosen, ...data } = m; o[id] = { id, dosen, data, s: dosen + '|' + J(data) }; });
+  return o;
 };
+const mkSnap = rows => { const o = {}; Object.keys(rows).forEach(id => { o[id] = rows[id].s; }); return o; };
+const joinKeys = list => { const o = {}; list.forEach(j => { o[j.mkId + '|' + j.mhs] = { mk_id: j.mkId, mhs: j.mhs }; }); return o; };
+const progRows = obj => {
+  const o = {};
+  Object.keys(obj).forEach(mk => Object.keys(obj[mk]).forEach(em => {
+    const x = obj[mk][em] || {}, cols = {}, s = {};
+    PCOLS.forEach(c => { cols[c] = x[c] || {}; s[c] = J(cols[c]); });
+    o[mk + '|' + em] = { mk_id: mk, email: em, cols, s };
+  }));
+  return o;
+};
+const progSnap = rows => { const o = {}; Object.keys(rows).forEach(k => { o[k] = { mk_id: rows[k].mk_id, email: rows[k].email, s: rows[k].s }; }); return o; };
 
-const Auth = {
-  users() { return DB.get('lms_users', []); },
-  saveAll(list) { return DB.set('lms_users', list); },
-  find(email) { const e = String(email || '').trim().toLowerCase(); return this.users().find(u => u.email === e); },
-  session() { const e = DB.get('lms_session', null); return e ? this.find(e) : null; },
-  login(email) { DB.set('lms_session', email.trim().toLowerCase()); },
-  logout() { try { localStorage.removeItem('lms_session'); } catch (e) {} location.href = 'login.html'; },
-  update(email, patch) {
-    const list = this.users(), i = list.findIndex(u => u.email === email);
-    if (i < 0) return null;
-    Object.assign(list[i], patch);
-    this.saveAll(list);
-    return list[i];
-  },
-  // Mengganti Gmail: semua data yang memakai Gmail lama (sesi, kelas, progres, pelajaran) ikut dipindah.
-  // Status verifikasi direset karena Gmail baru belum diverifikasi.
-  changeEmail(oldE, newE) {
-    const list = this.users(), u = list.find(x => x.email === oldE);
-    if (!u) return false;
-    u.email = newE; u.verified = false; u.vcode = null; this.saveAll(list);
-    DB.set('lms_session', newE);
-    const jn = DB.get('lms_join', []); jn.forEach(j => { if (j.mhs === oldE) j.mhs = newE; }); DB.set('lms_join', jn);
-    const pr = DB.get('lms_prog', {}); Object.values(pr).forEach(m => { if (m[oldE]) { m[newE] = m[oldE]; delete m[oldE]; } }); DB.set('lms_prog', pr);
-    const mk = DB.get('lms_mk', []); mk.forEach(m => { if (m.dosen === oldE) m.dosen = newE; }); DB.set('lms_mk', mk);
+function syncMk(list) {
+  const now = mkRows(list), ups = [], dels = [];
+  Object.keys(now).forEach(id => { if (SNAP.mk[id] !== now[id].s) ups.push({ id, dosen: now[id].dosen, data: now[id].data }); });
+  Object.keys(SNAP.mk).forEach(id => { if (!now[id]) dels.push(id); });
+  SNAP.mk = mkSnap(now);
+  if (ups.length) enqueue(async () => { const { error } = await sb.from('mk').upsert(ups); if (error) throw error; });
+  if (dels.length) enqueue(async () => { const { error } = await sb.from('mk').delete().in('id', dels); if (error) throw error; });
+}
+
+function syncJoin(list) {
+  const now = joinKeys(list), by = {};
+  Object.keys(SNAP.join).forEach(k => { if (!now[k]) { const r = SNAP.join[k]; (by[r.mk_id] = by[r.mk_id] || []).push(r.mhs); } });
+  SNAP.join = now;
+  Object.keys(by).forEach(mk => enqueue(async () => { const { error } = await sb.from('bergabung').delete().eq('mk_id', mk).in('mhs', by[mk]); if (error) throw error; }));
+}
+function syncProg(obj) {
+  const now = progRows(obj), ins = [], upd = [], dels = {};
+  Object.keys(now).forEach(k => {
+    const n = now[k], o = SNAP.prog[k];
+    if (!o) { ins.push({ mk_id: n.mk_id, email: n.email, ...n.cols }); return; }
+    const ch = PCOLS.filter(c => o.s[c] !== n.s[c]);
+    if (ch.length) { const row = { mk_id: n.mk_id, email: n.email }; ch.forEach(c => { row[c] = n.cols[c]; }); upd.push({ key: ch.join(','), row }); }
+  });
+  Object.keys(SNAP.prog).forEach(k => { if (!now[k]) { const r = SNAP.prog[k]; (dels[r.mk_id] = dels[r.mk_id] || []).push(r.email); } });
+  SNAP.prog = progSnap(now);
+  const up = async rows => { const { error } = await sb.from('progres').upsert(rows, { onConflict: 'mk_id,email' }); if (error) throw error; };
+  if (ins.length) enqueue(() => up(ins));
+  const groups = {}; upd.forEach(u => { (groups[u.key] = groups[u.key] || []).push(u.row); });
+  Object.keys(groups).forEach(g => enqueue(() => up(groups[g])));
+  Object.keys(dels).forEach(mk => enqueue(async () => { const { error } = await sb.from('progres').delete().eq('mk_id', mk).in('email', dels[mk]); if (error) throw error; }));
+}
+
+const DB = {
+  get(k, d) { const v = CACHE[k]; return v == null ? d : JSON.parse(JSON.stringify(v)); },
+  set(k, v) {
+    CACHE[k] = v; WSEQ++;
+    if (k === 'lms_mk') syncMk(v); else if (k === 'lms_join') syncJoin(v); else if (k === 'lms_prog') syncProg(v);
     return true;
-  },
-  // Hapus akun permanen. Pengajar: pelajaran, kelas, dan data partisipan di dalamnya ikut hilang. Partisipan: keluar dari semua kelas.
-  deleteAccount(email) {
-    const u = this.find(email); if (!u) return false;
-    const jn = DB.get('lms_join', []), pr = DB.get('lms_prog', {}); let mk = DB.get('lms_mk', []);
-    if (u.role === 'Pengajar') {
-      const ids = mk.filter(m => m.dosen === email).map(m => m.id);
-      ids.forEach(id => delete pr[id]);
-      DB.set('lms_mk', mk.filter(m => m.dosen !== email)); DB.set('lms_join', jn.filter(j => !ids.includes(j.mkId)));
-    } else {
-      DB.set('lms_join', jn.filter(j => j.mhs !== email));
-      Object.values(pr).forEach(m => { delete m[email]; });
-    }
-    DB.set('lms_prog', pr); this.saveAll(this.users().filter(x => x.email !== email));
-    try { localStorage.removeItem('lms_session'); } catch (e) {}
-    return true;
-  },
-  requireLogin() { const u = this.session(); if (!u) location.replace('login.html'); return u; },
-  async hash(pw) {
-    try {
-      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw + ':lms-kampus'));
-      return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (e) { return btoa(unescape(encodeURIComponent(pw))); }
   }
 };
 
-// Migrasi istilah lama untuk akun yang sudah ada: Dosen -> Pengajar, Mahasiswa -> Partisipan
-(function () {
-  const l = DB.get('lms_users', []); let ch = false;
-  l.forEach(u => { if (u.role === 'Dosen') { u.role = 'Pengajar'; ch = true; } else if (u.role === 'Mahasiswa') { u.role = 'Partisipan'; ch = true; } if ('kelas' in u) { delete u.kelas; ch = true; } });
-  if (ch) DB.set('lms_users', l);
-})();
+// Ambil semua baris sebuah tabel (Supabase membatasi 1000 baris per permintaan)
+async function fetchAll(table, order) {
+  const out = [];
+  for (let i = 0; ; i += 1000) {
+    let q = sb.from(table).select('*');
+    order.forEach(c => { q = q.order(c); });
+    const { data, error } = await q.range(i, i + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) break;
+  }
+  return out;
+}
+// Muat semua data milik pengguna yang sedang login (aturan RLS di database menentukan baris mana yang boleh dilihat).
+// Mengembalikan false jika belum login. soft=true: batalkan ('stale') bila ada perubahan lokal selama pengambilan data.
+async function loadAll(soft) {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return false;
+  const au = session.user, w0 = WSEQ;
+  const [pr, mk, jn, pg] = await Promise.all([
+    fetchAll('profiles', ['uid']), fetchAll('mk', ['id']), fetchAll('bergabung', ['mk_id', 'mhs']), fetchAll('progres', ['mk_id', 'email'])
+  ]);
+  if (soft && WSEQ !== w0) return 'stale';
+  const users = pr.map(r => ({
+    uid: r.uid, email: r.email, nama: r.nama, role: r.role, id: r.id_user, hp: r.hp, prodi: r.prodi, pref: r.pref || {},
+    dibuat: Date.parse(r.dibuat) || null, verified: r.uid === au.id ? !!au.email_confirmed_at : true
+  }));
+  const me = users.find(u => u.uid === au.id);
+  if (!me) { await sb.auth.signOut({ scope: 'local' }); return false; }
+  CACHE.lms_users = users;
+  CACHE.lms_mk = mk.map(r => ({ ...r.data, id: r.id, dosen: r.dosen }));
+  CACHE.lms_join = jn.map(r => ({ mhs: r.mhs, mkId: r.mk_id, kelasId: r.kelas_id, at: Number(r.waktu) }));
+  const prog = {};
+  pg.forEach(r => { (prog[r.mk_id] = prog[r.mk_id] || {})[r.email] = { att: r.att, sub: r.sub, quiz: r.quiz, qt: r.qt, nilai: r.nilai, kembali: r.kembali, qext: r.qext }; });
+  CACHE.lms_prog = prog;
+  SESS = me.email;
+  SNAP.mk = mkSnap(mkRows(CACHE.lms_mk)); SNAP.join = joinKeys(CACHE.lms_join); SNAP.prog = progSnap(progRows(CACHE.lms_prog));
+  return true;
+}
+async function reloadData() { await Q; return loadAll(); }
+// Segarkan data di beranda (saat tab dibuka lagi, pindah menu, atau tiap 60 detik) agar perubahan dari pengguna lain tampil.
+// Layar tidak digambar ulang jika ada jendela terbuka, form pertemuan, atau pengguna sedang mengetik.
+async function refresh() {
+  if (REFRESHING || PENDING > 0 || PAGE !== 'beranda' || !SESS) return;
+  REFRESHING = true;
+  try {
+    const sig = () => J([CACHE.lms_mk, CACHE.lms_join, CACHE.lms_prog, CACHE.lms_users.map(u => [u.uid, u.email, u.pref, u.verified])]);
+    const before = sig();
+    if (await loadAll(true) !== true) return;
+    U = Auth.session() || U; isDosen = !!U && U.role === 'Pengajar';
+    const ae = document.activeElement, typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+    if (sig() !== before && !$('#layer').innerHTML && S.view !== 'pert' && !typing) render();
+  } catch (e) { console.warn('Segarkan data gagal', e); }
+  finally { REFRESHING = false; }
+}
+
+const Auth = {
+  users() { return CACHE.lms_users; },
+  find(email) { const e = String(email || '').trim().toLowerCase(); return CACHE.lms_users.find(u => u.email === e); },
+  session() { return SESS ? this.find(SESS) : null; },
+  // Hanya No. HP dan preferensi yang boleh diubah pengguna (nama, peran, ID, minat dikunci di database)
+  update(email, patch) {
+    const u = this.find(email); if (!u) return null;
+    Object.assign(u, patch);
+    const row = {}; ['hp', 'pref'].forEach(k => { if (k in patch) row[k] = patch[k]; });
+    if (Object.keys(row).length) { WSEQ++; enqueue(async () => { const { error } = await sb.from('profiles').update(row).eq('uid', u.uid); if (error) throw error; }); }
+    return u;
+  },
+  requireLogin() { const u = this.session(); if (!u) location.replace('login.html'); return u; },
+  async logout() { try { await Q; await sb.auth.signOut(); } catch (e) {} location.href = 'login.html'; }
+};
+
 const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v).trim());
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function toast(t) {
@@ -97,8 +181,7 @@ const $=s=>document.querySelector(s);
 
 /* ===== HALAMAN BERANDA, MATA KULIAH, PROGRES (pengajar & partisipan) ===== */
 const TOTAL = 16;
-const U = PAGE === 'beranda' ? (Auth.requireLogin() || { nama: '', id: '', role: '', prodi: '', email: '', verified: true }) : null;
-const isDosen = !!U && U.role === 'Pengajar';
+let U = null, isDosen = false;   // diisi setelah data dari Supabase dimuat (lihat bagian paling bawah)
 // view: home | courses | course (satu pelajaran) | kelas (satu kelas) | pert (pertemuan kelas) | progress | settings
 const S = { view: 'home', cid: null, kid: null, open: {}, edit: null, draft: {}, pf: null, pfKey: null };   // draft = lampiran tugas yang belum dikirim
 
@@ -154,7 +237,7 @@ const draftUI = (m, x, t, label) => {
     <div class="row" style="margin-top:10px"><button class="btn lime" ${d.length ? '' : 'disabled'} onclick="send(${a})">${label}${d.length ? ' (' + d.length + ' lampiran)' : ''}</button></div>
     <div class="quote">Maksimal ${MAX_LAMP} lampiran. Tiap file maks. 1,5 MB, total maks. 3 MB. Lampiran bisa dihapus sebelum dikirim.</div></div>`;
 };
-const MAXB = 1.5 * 1048576;   // batas ukuran berkas (penyimpanan browser terbatas)
+const MAXB = 1.5 * 1048576;   // batas ukuran berkas
 const readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('baca')); r.readAsDataURL(f); });
 // Buka berkas apa pun: PDF/gambar dibuka di tab baru, selain itu diunduh
 function bytesOf(f) {
@@ -198,31 +281,17 @@ function refItem(kind, mkId, n, j, kid) {
   const x = pertAt(mkId, n, kid); if (!x) return null;
   return (kind === 'mat' ? matOf(x) : kind === 'tl' ? tlOf(x) : qlOf(x))[j];
 }
-function lihatRef(kind, mkId, n, j, kid) {
-  const it = refItem(kind, mkId, n, j, kid); if (!it) return;
-  if (it.tipe === 'link') { bukaLink(it.url); return; }
+async function lihatRef(kind, mkId, n, j, kid) {
+  const it0 = refItem(kind, mkId, n, j, kid); if (!it0) return;
+  if (it0.tipe === 'link') { bukaLink(it0.url); return; }
+  let it; try { it = await withData(it0); } catch (e) { toast('Berkas tidak bisa dibuka'); return; }
   freePv();
   modal(`<button class="btn ghost" onclick="tutupModal()">← Kembali</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${it.size ? sizeTxt(it.size) : ''}</div>${previewHtml(it)}
   <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'${kid || ''}')">Unduh</button></div>`, 'wide');
 }
-function unduhRef(kind, mkId, n, j, kid) { const it = refItem(kind, mkId, n, j, kid); if (it && it.tipe !== 'link') bukaBerkas(it, true); }
-
-// Data lama (pertemuan di level pelajaran) dipindah ke tiap kelasnya
-function migrate() {
-  const l = st.mk(); let ch = false;
-  l.forEach(m => {
-    m.kelas.forEach(k => {
-      if (!k.pert) { k.pert = (m.pert || []).map(x => JSON.parse(JSON.stringify(x))); ch = true; }
-      k.pert.forEach(x => {
-        if (x.pdf !== undefined) { if (!x.materi) x.materi = x.pdf || null; delete x.pdf; ch = true; }
-        if (!Array.isArray(x.materi) || !Array.isArray(x.tugasLamp) || !Array.isArray(x.quizLamp) || x.tugasFile !== undefined) {
-          x.materi = matOf(x); x.tugasLamp = tlOf(x); x.quizLamp = qlOf(x); delete x.tugasFile; ch = true;
-        }
-      });
-    });
-    if (m.pert && m.kelas.length) { delete m.pert; ch = true; }
-  });
-  if (ch) st.setMk(l);
+async function unduhRef(kind, mkId, n, j, kid) {
+  const it0 = refItem(kind, mkId, n, j, kid); if (!it0 || it0.tipe === 'link') return;
+  try { bukaBerkas(await withData(it0), true); } catch (e) { toast('Berkas tidak bisa diunduh'); }
 }
 
 function stats(m, em) {
@@ -391,7 +460,7 @@ async function addFiles(d, files) {
     if (f.size > MAXB) { msg = f.name + ' lebih dari 1,5 MB.'; continue; }
     if (d.reduce((a, it) => a + (it.size || 0), 0) + f.size > MAX_TOTAL) { msg = 'Total ukuran lampiran maksimal 3 MB.'; continue; }
     if (d.some(it => it.tipe === 'file' && it.nama === f.name && it.size === f.size)) { msg = f.name + ' sudah ditambahkan.'; continue; }
-    try { d.push({ tipe: 'file', nama: f.name, size: f.size, data: await readFile(f) }); } catch (e) { msg = 'Gagal membaca ' + f.name; }
+    d.push({ tipe: 'file', nama: f.name, size: f.size, file: f });   // diunggah ke Supabase Storage saat dikirim/disimpan
   }
   return msg;
 }
@@ -414,21 +483,55 @@ function tambahLink(mkId, n, t) {
   inp.value = ''; render();
 }
 function hapusDraft(mkId, n, t, i) { const d = S.draft[dkey(mkId, n, t)]; if (d) d.splice(i, 1); render(); }
-const rapiItems = d => d.map(it => it.tipe === 'link' ? { tipe: 'link', url: it.url } : { tipe: 'file', nama: it.nama, size: it.size, data: it.data });
+// Berkas disimpan di Supabase Storage (bucket "lampiran"); di database hanya tersimpan nama, ukuran, dan path-nya.
+const FILEC = {};
+const safeName = n => String(n).normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-80) || 'berkas';
+async function upItems(list, prefix) {
+  const out = [];
+  for (const it of list) {
+    if (it.tipe === 'link') { out.push({ tipe: 'link', url: it.url }); continue; }
+    if (!it.path) {
+      if (!it.file) continue;
+      const path = prefix + '/' + uid('f') + '-' + safeName(it.nama);
+      const { error } = await sb.storage.from(BUCKET).upload(path, it.file, { contentType: it.file.type || 'application/octet-stream' });
+      if (error) throw error;
+      it.path = path;   // tersimpan di draft supaya tidak diunggah ulang bila pengiriman diulang
+    }
+    out.push({ tipe: 'file', nama: it.nama, size: it.size, path: it.path });
+  }
+  return out;
+}
+// Ambil isi berkas dari Storage (di-cache) dan tempelkan sebagai data URL agar fungsi pratinjau/unduh tetap bisa dipakai.
+async function withData(it) {
+  if (!it || it.tipe === 'link' || it.data || !it.path) return it;
+  if (!FILEC[it.path]) {
+    const { data, error } = await sb.storage.from(BUCKET).download(it.path);
+    if (error) throw error;
+    FILEC[it.path] = await readFile(data);
+  }
+  return { ...it, data: FILEC[it.path] };
+}
+let BUSY = false;
 async function send(mkId, n, t) {
+  if (BUSY) return;
   const x = pertAt(mkId, n); if (!x) return;
-  const k = dkey(mkId, n, t), d = S.draft[k] || [], p = P(mkId, U.email);
+  const k = dkey(mkId, n, t), d = S.draft[k] || [];
   if (!d.length) { toast('Tambahkan minimal satu file atau link dulu'); return; }
-  if (t === 'q') {
-    if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
-    p.qext[n] = { at: Date.now(), items: rapiItems(d) };
-  } else {
-    if (over(x.tugasDl) && !legacyFile(p.sub[n]) && !p.kembali[n]) { toast('Batas waktu pengumpulan sudah lewat'); render(); return; }
-    const a = d[0];
-    p.sub[n] = { nama: (a.tipe === 'link' ? a.url : a.nama) + (d.length > 1 ? ' (+' + (d.length - 1) + ' lainnya)' : ''), at: Date.now(), items: rapiItems(d) };
+  if (t === 'q') { if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; } }
+  else { const p0 = P(mkId, U.email); if (over(x.tugasDl) && !legacyFile(p0.sub[n]) && !p0.kembali[n]) { toast('Batas waktu pengumpulan sudah lewat'); render(); return; } }
+  let items;
+  BUSY = true;
+  try { toast('Mengirim…'); items = await upItems(d, mkId + '/u/' + U.uid); }
+  catch (e) { toast('Gagal mengunggah berkas: ' + ((e && e.message) || e)); return; }
+  finally { BUSY = false; }
+  const p = P(mkId, U.email);
+  if (t === 'q') p.qext[n] = { at: Date.now(), items };
+  else {
+    const a = items[0];
+    p.sub[n] = { nama: (a.tipe === 'link' ? a.url : a.nama) + (items.length > 1 ? ' (+' + (items.length - 1) + ' lainnya)' : ''), at: Date.now(), items };
     delete p.kembali[n];
   }
-  if (!setP(mkId, U.email, p)) { toast('Penyimpanan browser penuh. Hapus lampiran yang besar atau pakai link.'); return; }
+  setP(mkId, U.email, p);
   S.draft[k] = []; toast(t === 'q' ? 'Hasil quiz terkirim' : 'Tugas terkirim'); render();
 }
 // Quiz berupa link/file: partisipan cukup menandai selesai
@@ -483,17 +586,23 @@ function courseD(m) {
 }
 function bukaKelas(kid) { S.view = 'kelas'; S.kid = kid; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
 function bukaPert() { S.view = 'pert'; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
+async function kodeDipakai(kode, kelasId, e) {
+  const { data, error } = await sb.rpc('kode_dipakai', { p_kode: kode, p_kelas_id: kelasId });
+  if (error) { e.textContent = 'Gagal memeriksa kode: ' + error.message; return true; }
+  if (data) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return true; }
+  return false;
+}
 function acak(mkId) {
   const m = getMk(mkId);
   const ini = (m.kode || m.nama.split(/\s+/).map(w => w[0]).join('')).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'KLS';
   const l = ($('#kNama').value.trim().slice(-1) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   $('#kKode').value = `${ini}-${l}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 }
-function addKelas(mkId) {
+async function addKelas(mkId) {
   const nama = $('#kNama').value.trim(), kode = $('#kKode').value.trim().toUpperCase(), e = $('#kErr');
   if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
   if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
-  if (st.mk().some(m => m.kelas.some(k => k.kode === kode))) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return; }
+  if (await kodeDipakai(kode, null, e)) return;
   const m = getMk(mkId); m.kelas.push({ id: uid('k'), nama, kode, pert: [] });
   if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   render(); toast('Kelas dibuat. Kode: ' + kode);
@@ -591,6 +700,10 @@ function parseQuiz(txt) {
 }
 function editPert(n) { S.edit = n; render(); const f = document.getElementById('pForm'); if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth' }); }
 async function savePert() {
+  if (BUSY) return; BUSY = true;
+  try { await savePert0(); } finally { BUSY = false; }
+}
+async function savePert0() {
   const c = ctxKelas(); if (!c || !S.pf) return;
   const { m, k } = c, e = $('#pErr'), old = S.edit ? k.pert.find(x => x.n === S.edit) : null, topik = $('#pTopik').value.trim();
   const fail = t => { e.textContent = t; };
@@ -619,11 +732,14 @@ async function savePert() {
       quizDl = dl('#uQzDl', '#pQzDl', old && old.quizDl, 'quiz');
     }
   } catch (err) { return fail(err.message); }
+  try {
+    materi = await upItems(materi, m.id + '/materi'); tugasLamp = await upItems(tugasLamp, m.id + '/materi'); quizLamp = await upItems(quizLamp, m.id + '/materi');
+  } catch (err) { return fail('Gagal mengunggah berkas: ' + ((err && err.message) || err)); }
   const reopen = old ? $('#pReopen').checked : true;
   const absen = { dur, start: old && old.absen && !reopen ? old.absen.start : Date.now() };
   const data = { topik, tugas, tugasLamp, tugasDl, quiz: qz, quizLamp, quizDl, materi, absen };
   if (old) { Object.assign(old, data); delete old.tugasFile; } else k.pert.push({ n: k.pert.length + 1, ...data });
-  if (!saveMk(m)) return fail('Penyimpanan browser penuh. Coba kurangi berkas atau pakai link.');
+  if (!saveMk(m)) return fail('Gagal menyimpan data.');
   const msg = old ? 'Pertemuan ' + old.n + ' diperbarui' : 'Pertemuan ' + k.pert.length + ' ditambahkan';
   S.edit = null; S.pfKey = null; S.pf = null; render(); toast(msg);
 }
@@ -676,11 +792,12 @@ function kumpulModal(n) {
   }
   modal(h + '<div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">← Kembali ke pertemuan</button></div>');
 }
-function lihatTugas(n, i, j, kind) {
+async function lihatTugas(n, i, j, kind) {
   j = j || 0; PVJ = j; kind = kind || 'sub';
   const c = ctxKelas(); if (!c || !KUM[i]) return;
-  const { m } = c, u = Auth.find(KUM[i]), p = P(m.id, KUM[i]), fld = kind === 'qx' ? p.qext[n] : p.sub[n], nl = p.nilai[n], its = itemsOf(fld), it = its[j];
-  if (!it || it.tipe === 'link') { toast('Berkas tidak tersimpan'); return; }
+  const { m } = c, u = Auth.find(KUM[i]), p = P(m.id, KUM[i]), fld = kind === 'qx' ? p.qext[n] : p.sub[n], nl = p.nilai[n], its = itemsOf(fld), it0 = its[j];
+  if (!it0 || it0.tipe === 'link') { toast('Berkas tidak tersimpan'); return; }
+  let it; try { it = await withData(it0); } catch (e) { toast('Berkas tidak bisa dibuka'); return; }
   freePv();
   const tabs = its.length > 1 ? `<div class="row" style="margin-top:10px">${its.map((q, jj) => `<button class="btn ${jj === j ? '' : 'ghost'} sm" onclick="${q.tipe === 'link' ? `bukaLinkTugas(${n},${i},${jj},'${kind}')` : `lihatTugas(${n},${i},${jj},'${kind}')`}">${q.tipe === 'link' ? '🔗 Link' : '📄 ' + esc(q.nama.length > 22 ? q.nama.slice(0, 20) + '…' : q.nama)}</button>`).join('')}</div>` : '';
   const ctrl = kind === 'qx' ? `<div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j},'qx')">Unduh</button></div>`
@@ -688,10 +805,11 @@ function lihatTugas(n, i, j, kind) {
   modal(`<button class="btn ghost" onclick="kumpulModal(${n})">← Kembali ke daftar pengumpulan</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${esc(u.nama)} · ${esc(u.id)}${subAt(fld) ? ' · ' + fmtDt(subAt(fld)) : ''}${kind === 'qx' && fld && fld.at ? ' · ' + fmtDt(fld.at) : ''}</div>${tabs}
   ${previewHtml(it)}${ctrl}`, 'wide');
 }
-function unduhTugas(n, i, j, kind) {
+async function unduhTugas(n, i, j, kind) {
   const c = ctxKelas(); if (!c || !KUM[i]) return;
-  const p = P(c.m.id, KUM[i]), it = itemsOf(kind === 'qx' ? p.qext[n] : p.sub[n])[j || 0];
-  if (it && it.tipe !== 'link') bukaBerkas(it, true);
+  const p = P(c.m.id, KUM[i]), it0 = itemsOf(kind === 'qx' ? p.qext[n] : p.sub[n])[j || 0];
+  if (!it0 || it0.tipe === 'link') return;
+  try { bukaBerkas(await withData(it0), true); } catch (e) { toast('Berkas tidak bisa diunduh'); }
 }
 function bukaLinkTugas(n, i, j, kind) {
   const c = ctxKelas(); if (!c || !KUM[i]) return;
@@ -782,12 +900,12 @@ function kelasModal() {
   <p class="err" id="eKErr" role="alert"></p>
   <div class="row"><button class="btn lime" onclick="simpanKelas()">Simpan perubahan</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
 }
-function simpanKelas() {
+async function simpanKelas() {
   const c = ctxKelas(); if (!c) return; const { m, k } = c, e = $('#eKErr');
   const nama = $('#eKNama').value.trim(), kode = $('#eKKode').value.trim().toUpperCase();
   if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
   if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
-  if (st.mk().some(q => q.kelas.some(x => x.kode === kode && x.id !== k.id))) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return; }
+  if (await kodeDipakai(kode, k.id, e)) return;
   k.nama = nama; k.kode = kode;
   if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   tutupModal(); toast('Kelas diperbarui'); render();
@@ -830,17 +948,20 @@ function joinModal() {
   <div class="row"><button class="btn lime" onclick="joinKelas()">Masuk kelas</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
   $('#jKode').focus();
 }
-function joinKelas() {
+async function joinKelas() {
   const kode = $('#jKode').value.trim().toUpperCase(), e = $('#jErr');
   if (!kode) { e.textContent = 'Masukkan kode kelas.'; return; }
-  let hit = null;
-  for (const m of st.mk()) { const k = m.kelas.find(x => x.kode === kode); if (k) { hit = { m, k }; break; } }
-  if (!hit) { e.textContent = 'Kode kelas tidak ditemukan. Periksa kembali kode dari pengajarmu.'; return; }
-  const jn = st.jn();
-  if (jn.some(j => j.mhs === U.email && j.mkId === hit.m.id)) { e.textContent = 'Kamu sudah bergabung di pelajaran ini.'; return; }
-  jn.push({ mhs: U.email, mkId: hit.m.id, kelasId: hit.k.id, at: Date.now() });
-  if (!st.setJn(jn)) { e.textContent = 'Gagal menyimpan data.'; return; }
-  tutupModal(); toast('Berhasil bergabung: ' + hit.m.nama); go('courses');
+  e.textContent = '';
+  // Pencarian kode dan pendaftaran ke kelas dilakukan di server (fungsi join_by_code), jadi daftar semua kelas tidak perlu dibuka.
+  const { data, error } = await sb.rpc('join_by_code', { p_kode: kode });
+  if (error) {
+    const t = error.message || '';
+    e.textContent = t.includes('NOT_FOUND') ? 'Kode kelas tidak ditemukan. Periksa kembali kode dari pengajarmu.'
+      : t.includes('SUDAH') ? 'Kamu sudah bergabung di pelajaran ini.' : 'Gagal bergabung: ' + t;
+    return;
+  }
+  await reloadData();
+  tutupModal(); toast('Berhasil bergabung: ' + data.nama); go('courses');
 }
 
 // ---------- PROGRES & PENGATURAN ----------
@@ -862,21 +983,15 @@ function progress() {
     return `<div class="card"><b>${esc(m.nama)}</b>${rows}</div>`;
   }).join('') + '</div>';
 }
-// Pengaturan: akun, tampilan, pengingat, penyimpanan, panduan, bantuan
+// Pengaturan: akun, tampilan, pengingat, panduan, bantuan
 function setPref(k, v) {
   U.pref = { ...prefOf(U), [k]: v }; Auth.update(U.email, { pref: U.pref });
   applyPref(); render(); toast('Pengaturan disimpan');
-}
-function storUsage() {
-  let c = 0;
-  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith('lms_')) c += k.length + (localStorage.getItem(k) || '').length; } } catch (e) {}
-  return c;
 }
 function settings() {
   const pf = prefOf(U), isD = isDosen;
   const seg = (v, l) => `<button class="seg ${pf.fs === v ? 'on' : ''}" onclick="setPref('fs','${v}')" aria-pressed="${pf.fs === v}">${l}</button>`;
   const sw = (k, l, d) => `<label class="chk sw"><input type="checkbox" ${pf[k] !== false ? 'checked' : ''} onchange="setPref('${k}',this.checked)"><span><b>${l}</b><div class="quote">${d}</div></span></label>`;
-  const c = storUsage(), pct = Math.min(100, c / 5e6 * 100), mb = (c * 2 / 1048576).toFixed(1).replace('.', ',');
   const g = (t, d) => `<details class="guide"><summary>${t}</summary><p>${d}</p></details>`;
   const panduan = isD ? g('Membuat pelajaran dan kelas', 'Buka menu Pelajaran lalu Buat pelajaran. Di dalamnya buat kelas (misalnya A, B, C) dan bagikan kode kelasnya ke partisipan.')
     + g('Menambah pertemuan', 'Buka kelas, tekan Info selengkapnya, lalu tambah pertemuan. Centang Materi (maks. 5 file atau link), Tugas, atau Quiz, dan atur batas waktu serta batas absen mandiri.')
@@ -897,14 +1012,11 @@ function settings() {
       <p class="lock">Contoh: tulisan ini berubah ukurannya sesuai pilihanmu.</p></div>
     <div class="card"><b>Pengingat</b>${isD ? sw('nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di beranda.')
       : sw('ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di beranda saat pengajar membuka absen.') + sw('dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batasnya kurang dari 24 jam di beranda.')}</div>
-    <div class="card"><b>Penyimpanan</b><div class="meter ${pct > 80 ? 'hi' : ''}" role="img" aria-label="Penyimpanan terpakai ${pct.toFixed(0)} persen"><i style="width:${pct}%"></i></div>
-      <div class="quote">Terpakai sekitar ${mb} MB dari ±5 MB penyimpanan browser (${pct.toFixed(0)}%).${pct > 80 ? ' <b style="color:var(--red)">Hampir penuh. Hapus berkas besar atau pakai link.</b>' : ''}</div>
-      <p class="lock">Data saat ini tersimpan di browser ini saja.</p></div>
   </div>
   <div class="card pfull"><b>Panduan singkat</b><div style="margin-top:10px">${panduan}</div></div>
   <div class="card pfull"><b>Bantuan & tentang</b><p class="quote" style="margin:6px 0 12px">Ada kendala atau saran? Hubungi kami.</p>
     <div class="row"><a class="btn ghost" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="btn ghost" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
-    <p class="lock">KelasBelajar versi 1.0 · Data tersimpan di browser ini.</p></div>`;
+    <p class="lock">KelasBelajar versi 1.0</p></div>`;
 }
 
 // ---------- RENDER ----------
@@ -916,7 +1028,7 @@ function renderNav() {
 function go(v, id) {
   if (v === 'profil') { location.href = 'profil.html'; return; }
   S.view = v; S.edit = null; S.pfKey = null; if (id) S.cid = id;
-  render(); window.scrollTo(0, 0);
+  render(); window.scrollTo(0, 0); refresh();
 }
 function render() {
   renderNav();
@@ -927,7 +1039,6 @@ function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
 function initBeranda() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
-  migrate();
   const h = location.hash.slice(1);
   if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
   setMe(U);
@@ -946,8 +1057,6 @@ function initBeranda() {
 /* ===== HALAMAN LOGIN ===== */
 function initLogin(){
 
-// Kalau sudah login, langsung ke beranda
-if (Auth.session()) location.replace('index.html');
 if (new URLSearchParams(location.search).has('dihapus')) toast('Akun kamu sudah dihapus permanen.');
 
 function showTab(reg) {
@@ -968,10 +1077,18 @@ function role() { return document.querySelector('input[name=role]:checked').valu
 // ---- Masuk ----
 $('#fLogin').addEventListener('submit', async e => {
   e.preventDefault();
-  const email = $('#lEmail').value, pass = $('#lPass').value;
-  const u = Auth.find(email);
-  if (!u || u.hash !== await Auth.hash(pass)) { $('#eLogin').textContent = 'Email atau kata sandi salah.'; return; }
-  Auth.login(u.email);
+  const el = $('#eLogin'), btn = e.target.querySelector('button[type=submit]');
+  el.style.color = ''; el.textContent = '';
+  const email = $('#lEmail').value.trim().toLowerCase(), pass = $('#lPass').value;
+  if (!email || !pass) { el.textContent = 'Isi email dan kata sandi.'; return; }
+  btn.disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false;
+  if (error) {
+    el.textContent = /not confirmed/i.test(error.message) ? 'Gmail belum diverifikasi. Buka email dari KelasBelajar dan klik tautan konfirmasinya.'
+      : error.status === 400 ? 'Email atau kata sandi salah.' : 'Gagal masuk: ' + error.message;
+    return;
+  }
   location.href = 'index.html';
 });
 
@@ -993,22 +1110,25 @@ $('#fReg').addEventListener('submit', async e => {
   if (p1.length < 8) return err('Kata sandi minimal 8 karakter.');
   if (p1 !== p2) return err('Konfirmasi kata sandi tidak sama.');
   if (!$('#rOk').checked) return err('Centang pernyataan bahwa nama lengkap, peran, dan minat belajar sudah benar.');
-  if (Auth.find(d.email)) return err('Email ini sudah terdaftar. Silakan masuk.');
-
-  const list = Auth.users();
-  list.push({ ...d, hash: await Auth.hash(p1), verified: false, vcode: null, dibuat: Date.now() });
-  if (!Auth.saveAll(list)) return err('Gagal menyimpan data. Pastikan penyimpanan browser aktif.');
-  Auth.login(d.email);
-  location.href = 'profil.html?baru=1';   // lanjut verifikasi Gmail di profil
+  const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; err('');
+  const { data, error } = await sb.auth.signUp({
+    email: d.email, password: p1,
+    options: { emailRedirectTo: location.origin + '/profil.html', data: { nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, prodi: d.prodi } }
+  });
+  btn.disabled = false;
+  if (error) return err(/registered|exists/i.test(error.message) ? 'Email ini sudah terdaftar. Silakan masuk.' : 'Gagal mendaftar: ' + error.message);
+  if (data.user && data.user.identities && data.user.identities.length === 0) return err('Email ini sudah terdaftar. Silakan masuk.');
+  if (data.session) { location.href = 'profil.html?baru=1'; return; }   // lanjut ke profil
+  // Fitur "Confirm email" di Supabase aktif: akun bisa dipakai setelah tautan di email diklik.
+  showTab(false); $('#lEmail').value = d.email;
+  const el = $('#eLogin'); el.style.color = '#1a7f4b';
+  el.textContent = '✅ Akun dibuat. Kami mengirim email konfirmasi ke ' + d.email + '. Klik tautan di email itu, lalu masuk di sini.';
 });
 
 }
 
 /* ===== HALAMAN PROFIL ===== */
 function initProfil(){
-const TTL = 5 * 60 * 1000;      // kode berlaku 5 menit
-const COOLDOWN = 30 * 1000;     // jeda kirim ulang 30 detik
-const MAX_TRIES = 5;
 let editing = null, pwOpen = false, timer = null;   // editing: 'data' | 'kontak' | null
 
 if (!Auth.requireLogin()) return;
@@ -1020,18 +1140,16 @@ function render() {
   const idLabel = 'ID';
   setMe(u);
 
-  const vc = u.vcode && u.vcode.exp > Date.now() ? u.vcode : null;
   const baru = new URLSearchParams(location.search).has('baru') && !u.verified;
 
-  // Status "terverifikasi" cukup di lencana bawah nama. Kartu verifikasi hanya muncul bila Gmail belum diverifikasi.
+  // Verifikasi Gmail dilakukan Supabase lewat tautan di email. Kartu ini hanya muncul bila Gmail belum terverifikasi.
   const verif = u.verified ? '' : `<div class="card pfull">
         <div class="row" style="justify-content:space-between"><b>Verifikasi Gmail</b><span class="chip c-no">Belum terverifikasi</span></div>
-        <p class="quote">Tekan tombol di bawah. Kode 6 digit akan dikirim ke <b>${esc(u.email)}</b>, lalu masukkan kodenya di sini.</p>
-        <div class="row"><button class="btn lime" id="bSend">${vc ? 'Kirim ulang kode' : 'Verifikasi Gmail'}</button>
-        ${vc ? '<button class="btn ghost" id="bInbox">Buka kotak masuk (simulasi)</button>' : ''}</div>
-        ${vc ? `<div class="row" style="margin-top:16px"><input id="kode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code" aria-label="Kode verifikasi 6 digit" class="kode"><button class="btn" id="bCek">Konfirmasi kode</button></div>
-        <p class="err" id="eKode" role="alert"></p>` : ''}
+        <p class="quote">Kami mengirim email konfirmasi ke <b>${esc(u.email)}</b>. Buka emailnya, klik tautan verifikasi, lalu tekan Muat ulang status.</p>
+        <div class="row"><button class="btn lime" id="bSend">Kirim ulang email verifikasi</button><button class="btn ghost" id="bCek">Muat ulang status</button></div>
+        <p class="err" id="eKode" role="alert"></p>
       </div>`;
+
 
   // Data diri terkunci setelah pendaftaran; hanya Kontak (No. HP dan Gmail) yang bisa diubah.
   const dataCard = `<div class="card"><b>Data diri</b>
@@ -1088,81 +1206,55 @@ function render() {
     <div class="pcols">${dataCard}${kontakCard}${aktivitas}${aman}</div>
     ${mkCard}${hapusCard}`;
 
-  bind(u, vc);
+  bind(u);
 }
 
-function bind(u, vc) {
+function bind(u) {
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
-  on('#bSend', () => kirimKode(u));
-  on('#bInbox', () => inbox(u, vc.c));
-  on('#bCek', () => cekKode(u));
+  on('#bSend', async () => {
+    const b = $('#bSend'), say = m => { $('#eKode').textContent = m; };
+    b.disabled = true; say('');
+    const { error } = await sb.auth.resend({ type: 'signup', email: u.email, options: { emailRedirectTo: location.origin + '/profil.html' } });
+    if (error) { say('Gagal mengirim email: ' + error.message); setTimeout(() => { b.disabled = false; }, 5000); return; }
+    toast('Email verifikasi dikirim ke ' + u.email);
+    setTimeout(() => { b.disabled = false; }, 60000);
+  });
+  on('#bCek', async () => { try { await sb.auth.refreshSession(); } catch (e) {} location.href = 'profil.html'; });
   on('#bEditK', () => { editing = 'kontak'; pwOpen = false; render(); });
   on('#bBatalK', () => { editing = null; render(); });
   on('#bPw', () => { pwOpen = true; editing = null; render(); });
   on('#bPwBatal', () => { pwOpen = false; render(); });
   on('#bHapus', () => hapusModal());
-  const k = $('#kode');
-  if (k) { k.oninput = () => { k.value = k.value.replace(/\D/g, ''); }; k.onkeydown = e => { if (e.key === 'Enter') cekKode(u); }; }
   const fk = $('#fKontak');
-  if (fk) fk.onsubmit = e => {
+  if (fk) fk.onsubmit = async e => {
     e.preventDefault();
     const err = m => { $('#eKontak').textContent = m; };
     const hp = $('#eHp').value.trim(), em = $('#eEmail').value.trim().toLowerCase(), ganti = em !== u.email;
     if (!/^0\d{8,13}$/.test(hp)) return err('Nomor HP tidak valid. Contoh: 081234567890.');
     if (!isGmail(em)) return err('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
-    if (ganti && Auth.find(em)) return err('Gmail ini sudah dipakai akun lain.');
+    if (ganti) {
+      // Supabase mengirim email konfirmasi ke Gmail baru; Gmail baru berlaku setelah tautannya diklik.
+      const { error } = await sb.auth.updateUser({ email: em }, { emailRedirectTo: location.origin + '/profil.html' });
+      if (error) return err(/already|registered|exists/i.test(error.message) ? 'Gmail ini sudah dipakai akun lain.' : 'Gagal mengganti Gmail: ' + error.message);
+    }
     Auth.update(u.email, { hp });
-    if (ganti) Auth.changeEmail(u.email, em);
     editing = null; render();
-    toast(ganti ? 'Gmail diganti. Verifikasi ulang Gmail barumu di bawah.' : 'Kontak diperbarui');
+    toast(ganti ? 'Email konfirmasi dikirim ke Gmail baru. Gmail berganti setelah kamu klik tautannya.' : 'Kontak diperbarui');
   };
   const fp = $('#fPw');
   if (fp) fp.onsubmit = async e => {
     e.preventDefault();
     const say = m => { $('#ePw').textContent = m; };
     const lama = $('#pwOld').value, baru = $('#pwNew').value, ulang = $('#pwNew2').value;
-    if (await Auth.hash(lama) !== Auth.find(u.email).hash) return say('Kata sandi saat ini salah.');
+    const chk = await sb.auth.signInWithPassword({ email: u.email, password: lama });
+    if (chk.error) return say('Kata sandi saat ini salah.');
     if (baru.length < 8) return say('Kata sandi baru minimal 8 karakter.');
     if (baru === lama) return say('Kata sandi baru harus berbeda dari yang lama.');
     if (baru !== ulang) return say('Konfirmasi kata sandi baru tidak sama.');
-    Auth.update(u.email, { hash: await Auth.hash(baru) }); pwOpen = false; render(); toast('Kata sandi diperbarui');
+    const { error } = await sb.auth.updateUser({ password: baru });
+    if (error) return say('Gagal mengubah kata sandi: ' + error.message);
+    pwOpen = false; render(); toast('Kata sandi diperbarui');
   };
-  // hitung mundur tombol kirim ulang
-  clearInterval(timer);
-  const b = $('#bSend');
-  if (b && vc) {
-    const tick = () => {
-      const s = Math.ceil((vc.sent + COOLDOWN - Date.now()) / 1000);
-      if (s > 0) { b.disabled = true; b.textContent = 'Kirim ulang (' + s + ' dtk)'; }
-      else { b.disabled = false; b.textContent = 'Kirim ulang kode'; clearInterval(timer); }
-    };
-    tick(); timer = setInterval(tick, 500);
-  }
-}
-
-function kirimKode(u) {
-  const cur = Auth.find(u.email);
-  if (cur.vcode && Date.now() - cur.vcode.sent < COOLDOWN) return;
-  const c = String(Math.floor(100000 + Math.random() * 900000));
-  Auth.update(u.email, { vcode: { c, exp: Date.now() + TTL, sent: Date.now(), tries: 0 } });
-  render();
-  inbox(u, c);
-}
-
-function cekKode(u) {
-  const cur = Auth.find(u.email), v = cur.vcode, e = $('#eKode');
-  const say = m => { e.textContent = m; };
-  if (!v || v.exp < Date.now()) return say('Kode kedaluwarsa. Kirim ulang kode.');
-  if (v.tries >= MAX_TRIES) return say('Terlalu banyak percobaan salah. Kirim ulang kode baru.');
-  const input = $('#kode').value.trim();
-  if (input.length !== 6) return say('Masukkan 6 digit kode.');
-  if (input !== v.c) {
-    v.tries++; Auth.update(u.email, { vcode: v });
-    return say('Kode salah. Sisa percobaan: ' + (MAX_TRIES - v.tries) + '.');
-  }
-  Auth.update(u.email, { verified: true, vcode: null });
-  history.replaceState(null, '', 'profil.html');
-  render(); toast('Gmail berhasil diverifikasi ✅');
 }
 
 // Hapus akun permanen: peringatan dampak + ketik HAPUS + kata sandi
@@ -1196,38 +1288,42 @@ function hapusModal() {
   $('#bHapusOk').onclick = async () => {
     const say = m => { $('#eHapus').textContent = m; };
     if ($('#hKonf').value.trim() !== 'HAPUS') return say('Ketik HAPUS (huruf kapital) untuk mengonfirmasi.');
-    if (await Auth.hash($('#hPw').value) !== Auth.find(u.email).hash) return say('Kata sandi salah.');
-    Auth.deleteAccount(u.email);
+    const chk = await sb.auth.signInWithPassword({ email: u.email, password: $('#hPw').value });
+    if (chk.error) return say('Kata sandi salah.');
+    const { error } = await sb.rpc('delete_my_account');
+    if (error) return say('Gagal menghapus akun: ' + error.message);
+    try { await sb.auth.signOut({ scope: 'local' }); } catch (e) {}
     location.href = 'login.html?dihapus=1';
   };
   $('#hKonf').focus();
 }
 
-// SIMULASI kotak masuk Gmail. Di sistem sungguhan, kode dikirim server lewat SMTP/API email.
-function inbox(u, code) {
-  $('#layer').innerHTML = `<div class="modal" id="mdl"><div class="sheet" role="dialog" aria-modal="true" aria-label="Kotak masuk Gmail simulasi">
-    <h3>📬 Kotak masuk Gmail (simulasi)</h3>
-    <div class="mail">
-      <div class="mh"><b>KelasBelajar</b> &lt;no-reply@kelasbelajar.test&gt;<br>Kepada: ${esc(u.email)}<br>Subjek: Kode verifikasi KelasBelajar</div>
-      <p>Halo ${esc(u.nama)},</p><p>Gunakan kode berikut untuk memverifikasi Gmail kamu:</p>
-      <div class="code">${code}</div>
-      <p class="quote">Kode berlaku 5 menit. Jangan bagikan kode ini kepada siapa pun.</p>
-    </div>
-    <p class="quote">Ini simulasi untuk demo. Email asli baru terkirim jika ada server backend yang mengirim email.</p>
-    <button class="btn lime" id="bTutup">Tutup, masukkan kode</button></div></div>`;
-  const close = () => { $('#layer').innerHTML = ''; const k = $('#kode'); if (k) k.focus(); };
-  $('#bTutup').onclick = close;
-  $('#mdl').onclick = e => { if (e.target.id === 'mdl') close(); };
-  $('#bTutup').focus();
-}
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#layer').innerHTML = ''; });
 render();
 
 }
 
 /* ===== JALANKAN HALAMAN YANG AKTIF ===== */
-applyPref();
 const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = footerHtml();   // login: tanpa footer
-if(PAGE==='beranda')initBeranda();
-if(PAGE==='login')initLogin();
-if(PAGE==='profil')initProfil();
+(async function boot() {
+  try {
+    if (/GANTI/.test(SUPABASE_URL) || /GANTI/.test(SUPABASE_ANON_KEY)) throw new Error('Konfigurasi Supabase belum diisi. Buka app.js lalu isi SUPABASE_URL dan SUPABASE_ANON_KEY.');
+    if (PAGE === 'login') {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) { location.replace('index.html'); return; }
+      initLogin(); return;
+    }
+    if (!(await loadAll())) { location.replace('login.html'); return; }
+    applyPref();
+    if (PAGE === 'beranda') {
+      U = Auth.session(); isDosen = U.role === 'Pengajar';
+      initBeranda();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+      setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+    }
+    if (PAGE === 'profil') initProfil();
+  } catch (e) {
+    console.error(e);
+    document.body.innerHTML = '<div style="padding:40px;font-family:system-ui,sans-serif;max-width:560px"><h2>Gagal memuat data</h2><p>' + esc((e && e.message) || e) + '</p><p>Periksa koneksi internet dan konfigurasi Supabase, lalu muat ulang halaman.</p></div>';
+  }
+})();
