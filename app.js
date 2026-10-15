@@ -157,8 +157,8 @@ function toast(t) {
 }
 
 const PAGE=document.body.dataset.page;
-// Preferensi pengguna disimpan di data akunnya (u.pref): ukuran teks, pengingat
-const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, ...((u && u.pref) || {}) });
+// Preferensi pengguna disimpan di data akunnya (u.pref): ukuran teks, pengingat, dan penanda panduan awal sudah dilihat (tour)
+const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, tour: false, ...((u && u.pref) || {}) });
 function applyPref() { const u = Auth.session(); if (document.documentElement) document.documentElement.setAttribute('data-fs', prefOf(u).fs); }
 // Info pengguna di bilah atas: nama, lencana peran yang jelas, dan ID
 function setMe(u) {
@@ -168,11 +168,11 @@ function setMe(u) {
   g('meSub').innerHTML = `<span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span><span class="idtxt">ID ${esc(u.id)}</span>`;
 }
 const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
-// Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, tautan memakai go() agar tidak memuat ulang halaman.
+// Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, panduan dibuka langsung; di halaman lain lewat index.html#tour.
 function footerHtml() {
-  const nav = (v, l) => PAGE === 'beranda' ? `<button class="fl" onclick="go('${v}')">${l}</button>` : `<a class="fl" href="index.html#${v}">${l}</a>`;
+  const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">Panduan penggunaan</button>` : `<a class="fl" href="index.html#tour">Panduan penggunaan</a>`;
   return `<div class="fgrid">
-    <div><h4>Bantuan</h4>${nav('settings', 'Panduan singkat')}</div>
+    <div><h4>Bantuan</h4>${tur}</div>
     <div><h4>Hubungi kami</h4><a class="fl" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="fl" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
   </div>
   <div class="fbar"><span>© ${new Date().getFullYear()} KelasBelajar. Semua hak dilindungi.</span></div>`;
@@ -992,18 +992,6 @@ function settings() {
   const pf = prefOf(U), isD = isDosen;
   const seg = (v, l) => `<button class="seg ${pf.fs === v ? 'on' : ''}" onclick="setPref('fs','${v}')" aria-pressed="${pf.fs === v}">${l}</button>`;
   const sw = (k, l, d) => `<label class="chk sw"><input type="checkbox" ${pf[k] !== false ? 'checked' : ''} onchange="setPref('${k}',this.checked)"><span><b>${l}</b><div class="quote">${d}</div></span></label>`;
-  const g = (t, d) => `<details class="guide"><summary>${t}</summary><p>${d}</p></details>`;
-  const panduan = isD ? g('Membuat pelajaran dan kelas', 'Buka menu Pelajaran lalu Buat pelajaran. Di dalamnya buat kelas (misalnya A, B, C) dan bagikan kode kelasnya ke partisipan.')
-    + g('Menambah pertemuan', 'Buka kelas, tekan Info selengkapnya, lalu tambah pertemuan. Centang Materi (maks. 5 file atau link), Tugas, atau Quiz, dan atur batas waktu serta batas absen mandiri.')
-    + g('Memeriksa dan menilai tugas', 'Tekan Pengumpulan pada pertemuan. Kamu bisa melihat file langsung tanpa mengunduh, memberi nilai dan catatan, atau menekan Kembalikan agar partisipan mengerjakan ulang.')
-    + g('Mengabsen', 'Tekan Absensi untuk mengubah status kehadiran kapan saja, termasuk setelah batas absen mandiri lewat.')
-    + g('Mengubah atau menghapus', 'Pelajaran dan kelas bisa diubah atau dihapus dari halamannya. Penghapusan bersifat permanen dan ikut menghapus pertemuan serta data partisipan di dalamnya.')
-    : g('Masuk kelas', 'Buka menu Pelajaran lalu Masuk kelas, dan masukkan kode kelas dari pengajarmu.')
-    + g('Absen', 'Saat pengajar membuka absen, tekan Absen sekarang sebelum waktunya habis. Jika terlewat, minta pengajar mengabsenmu.')
-    + g('Membaca materi', 'Buka pertemuan lalu tekan Lihat untuk membuka materi langsung di halaman tanpa mengunduh. Link dibuka di tab baru.')
-    + g('Mengirim tugas', 'Tambahkan file atau link (maksimal 5), hapus yang salah, lalu tekan Kirim tugas. Tugas yang dikembalikan pengajar bisa dikirim ulang.')
-    + g('Mengerjakan quiz', 'Quiz berisi soal bisa langsung dikerjakan. Untuk quiz berupa link atau file, kerjakan di link yang diberikan lalu tekan Tandai selesai atau kirim hasilmu.')
-    + g('Keluar dari pelajaran', 'Buka halaman pelajarannya lalu tekan Keluar dari pelajaran. Absen, tugas, dan nilaimu di pelajaran itu akan terhapus.');
   return `<h1>Pengaturan</h1><p class="quote">Atur akun, tampilan, pengingat, dan data aplikasimu.</p>
   <div class="pcols">
     <div class="card"><b>Akun</b><dl class="kv"><dt>Nama</dt><dd>${esc(U.nama)}</dd><dt>Peran</dt><dd>${esc(U.role)} · ${esc(U.id)}</dd><dt>Gmail</dt><dd>${esc(U.email)} ${U.verified ? '<span class="chip c-ok">Terverifikasi</span>' : '<span class="chip c-no">Belum terverifikasi</span>'}</dd></dl>
@@ -1013,10 +1001,109 @@ function settings() {
     <div class="card"><b>Pengingat</b>${isD ? sw('nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di beranda.')
       : sw('ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di beranda saat pengajar membuka absen.') + sw('dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batasnya kurang dari 24 jam di beranda.')}</div>
   </div>
-  <div class="card pfull"><b>Panduan singkat</b><div style="margin-top:10px">${panduan}</div></div>
+  <div class="card pfull"><b>Panduan penggunaan</b><p class="quote" style="margin:6px 0 12px">Tur singkat yang menyorot menu-menu utama dan menjelaskan cara memakainya.</p>
+    <div class="row"><button class="btn lime" onclick="startTour()">▶ Mulai panduan</button></div></div>
   <div class="card pfull"><b>Bantuan & tentang</b><p class="quote" style="margin:6px 0 12px">Ada kendala atau saran? Hubungi kami.</p>
     <div class="row"><a class="btn ghost" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="btn ghost" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
     <p class="lock">KelasBelajar versi 1.0</p></div>`;
+}
+
+// ---------- PANDUAN SPOTLIGHT (panduan penggunaan awal) ----------
+// Menyorot menu utama satu per satu dengan latar gelap. Muncul otomatis sekali untuk pengguna baru
+// (penanda u.pref.tour disimpan di akun) dan bisa dibuka lagi dari Pengaturan atau footer.
+const TOUR = { on: false, i: 0, steps: [], raf: 0, key: '', prev: null };
+function tourSteps() {
+  const nm = esc((U.nama || '').split(' ')[0] || 'kamu'), N = i => `#nav button:nth-child(${i})`, d = isDosen;
+  return [
+    { h: `Selamat datang, ${nm}! 👋`, p: `Tur singkat ini menyorot menu utama KelasBelajar dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}. Hanya sekitar satu menit.` },
+    { t: N(1), h: 'Beranda', p: d ? 'Ringkasan pelajaranmu, termasuk pengingat jumlah tugas yang belum dinilai.' : 'Lihat pengingat absen yang sedang dibuka, tugas dan quiz yang batasnya segera berakhir, serta progres belajarmu.' },
+    d ? { t: N(2), h: 'Pelajaran', p: 'Mulai dari sini.', l: ['Tekan <b>Buat pelajaran</b>, lalu buat kelas di dalamnya (misalnya A, B, C).', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung.', 'Pelajaran dan kelas bisa diubah atau dihapus dari halamannya. Hati-hati, penghapusan bersifat permanen dan ikut menghapus pertemuan serta data partisipan.'] }
+      : { t: N(2), h: 'Pelajaran', p: 'Mulai dari sini.', l: ['Tekan <b>Masuk kelas</b>, lalu masukkan kode kelas dari pengajarmu.', 'Setelah bergabung, pelajaran muncul di sini lengkap dengan absen, materi, tugas, dan quiz.'] },
+    d ? { h: 'Setelah kelas dibuat', p: 'Buka kelas, tekan <b>Info selengkapnya</b>, lalu atur pertemuan:', l: ['<b>Tambah pertemuan:</b> centang Materi (maks. 5 file atau link), Tugas, atau Quiz, lalu atur batas waktu dan batas absen mandiri.', '<b>Pengumpulan:</b> lihat file langsung tanpa mengunduh, beri nilai dan catatan, atau tekan Kembalikan agar partisipan mengerjakan ulang.', '<b>Absensi:</b> ubah status kehadiran kapan saja, termasuk setelah batas absen mandiri lewat.'] }
+      : { h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen:</b> tekan Absen sekarang sebelum waktunya habis. Jika terlewat, minta pengajar mengabsenmu.', '<b>Materi:</b> tekan Lihat untuk membukanya langsung di halaman tanpa mengunduh. Link dibuka di tab baru.', '<b>Tugas:</b> tambahkan file atau link (maksimal 5), hapus yang salah, lalu tekan Kirim tugas. Tugas yang dikembalikan bisa dikirim ulang.', '<b>Quiz:</b> soal bisa langsung dikerjakan. Untuk quiz berupa link atau file, kerjakan di link yang diberikan lalu tekan Tandai selesai atau kirim hasilmu.', 'Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.'] },
+    { t: N(3), h: 'Progres', p: d ? 'Pantau kehadiran serta penyelesaian tugas dan quiz di tiap kelas.' : 'Pantau kehadiran dan tugas yang sudah selesai di setiap pelajaran.' },
+    { t: N(4), h: 'Pengaturan', p: 'Atur ukuran teks dan pengingat, lihat data akunmu, atau ulangi panduan ini kapan saja.' },
+    { t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas untuk membuka profil, mengubah kontak, dan mengatur keamanan akunmu.' },
+    { t: '.foot .fgrid > div:last-child', h: 'Butuh bantuan?', p: `Hubungi kami lewat email atau WhatsApp di sini kalau ada kendala atau saran. Panduan ini bisa dibuka lagi lewat Pengaturan atau footer. Selamat ${d ? 'mengajar' : 'belajar'}! 🎉` }
+  ];
+}
+function startTour() {
+  if (PAGE !== 'beranda' || !U || TOUR.on) return;
+  tutupModal();
+  TOUR.on = true; TOUR.steps = tourSteps(); TOUR.prev = document.activeElement;
+  const r = document.createElement('div');
+  r.id = 'tour'; r.className = 'tr nohole';
+  r.innerHTML = '<div class="tr-dim"></div><div class="tr-hole"></div><div class="tr-tip" id="trTip" role="dialog" aria-modal="true" aria-labelledby="trH" tabindex="-1"></div>';
+  document.body.appendChild(r);
+  document.addEventListener('keydown', tourKey, true);
+  tourShow(0);
+  const tip = $('#trTip'); tip.style.transition = 'none'; tourPlace(); void tip.offsetWidth; tip.style.transition = ''; tip.classList.add('rdy');
+  tourLoop();
+}
+function tourShow(i) {
+  const s = TOUR.steps[i], n = TOUR.steps.length, last = i === n - 1, tip = $('#trTip');
+  TOUR.i = i; TOUR.key = '';
+  tip.classList.toggle('mid', !s.t);
+  tip.innerHTML = `<div class="tr-top"><span class="tr-n">Langkah ${i + 1} dari ${n}</span>${last ? '' : '<button class="tr-skip" onclick="endTour()">Lewati</button>'}</div>
+    <h3 id="trH">${s.h}</h3><p>${s.p}</p>${s.l ? '<ul>' + s.l.map(x => `<li>${x}</li>`).join('') + '</ul>' : ''}
+    <div class="tr-foot"><div class="tr-dots" aria-hidden="true">${TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>${i ? '<button class="btn ghost" onclick="tourGo(-1)">Kembali</button>' : ''}<button class="btn lime" id="trNext" onclick="tourGo(1)">${last ? 'Selesai' : i ? 'Lanjut' : 'Mulai'}</button></div>`;
+  tip.scrollTop = 0;
+  const el = s.t && document.querySelector(s.t);
+  if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  $('#trNext').focus({ preventScroll: true });
+}
+function tourGo(d) { const j = TOUR.i + d; if (j >= TOUR.steps.length) return endTour(); if (j >= 0) tourShow(j); }
+// Posisi lubang sorotan dan kotak penjelasan dihitung ulang tiap frame agar tetap pas saat halaman bergulir, diubah ukurannya, atau digambar ulang
+function tourPlace() {
+  const root = $('#tour'), tip = $('#trTip'); if (!root || !tip) return;
+  const s = TOUR.steps[TOUR.i], hole = root.querySelector('.tr-hole');
+  const el = s.t ? document.querySelector(s.t) : null, r = el ? el.getBoundingClientRect() : null, ok = !!r && r.width > 0 && r.height > 0;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
+  const key = [ok ? [r.left, r.top, r.width, r.height].map(Math.round).join(',') : '-', vw, vh, tw, th, TOUR.i].join('|');
+  if (key === TOUR.key) return;
+  TOUR.key = key;
+  root.classList.toggle('nohole', !ok);
+  const m = 12; let x, y;
+  if (ok) {
+    const p = 6, g = 14, cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    hole.style.cssText = `left:${r.left - p}px;top:${r.top - p}px;width:${r.width + 2 * p}px;height:${r.height + 2 * p}px`;
+    const o = {
+      right: [r.right + p + g, cy - th / 2, vw - (r.right + p + g) - m >= tw],
+      bottom: [cx - tw / 2, r.bottom + p + g, vh - (r.bottom + p + g) - m >= th],
+      top: [cx - tw / 2, r.top - p - g - th, r.top - p - g - m >= th],
+      left: [r.left - p - g - tw, cy - th / 2, r.left - p - g - m >= tw]
+    };
+    const k = (vw <= 820 ? ['bottom', 'top', 'right', 'left'] : ['right', 'bottom', 'top', 'left']).find(q => o[q][2]);
+    [x, y] = k ? o[k] : [cx - tw / 2, vh - th - m];
+  } else {
+    hole.style.cssText = `left:${vw / 2}px;top:${vh / 2}px;width:0;height:0`;
+    x = (vw - tw) / 2; y = (vh - th) / 2;
+  }
+  tip.style.left = Math.max(m, Math.min(x, vw - tw - m)) + 'px';
+  tip.style.top = Math.max(m, Math.min(y, vh - th - m)) + 'px';
+}
+function tourLoop() { if (!TOUR.on) return; tourPlace(); TOUR.raf = requestAnimationFrame(tourLoop); }
+function tourKey(e) {
+  if (!TOUR.on) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endTour(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); tourGo(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); tourGo(-1); }
+  else if (e.key === 'Tab') {
+    const f = [...$('#trTip').querySelectorAll('button')], n = f.length; if (!n) return;
+    e.preventDefault();
+    const i = f.indexOf(document.activeElement);
+    f[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + n) % n].focus();
+  }
+}
+function endTour() {
+  if (!TOUR.on) return;
+  TOUR.on = false; cancelAnimationFrame(TOUR.raf);
+  document.removeEventListener('keydown', tourKey, true);
+  const r = $('#tour'); if (r) r.remove();
+  if (U && !prefOf(U).tour) { U.pref = { ...prefOf(U), tour: true }; Auth.update(U.email, { pref: U.pref }); }
+  window.scrollTo(0, 0);
+  const pv = TOUR.prev; TOUR.prev = null;
+  if (pv && pv !== document.body && document.contains(pv) && pv.focus) pv.focus({ preventScroll: true });
 }
 
 // ---------- RENDER ----------
@@ -1041,8 +1128,12 @@ function initBeranda() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
   const h = location.hash.slice(1);
   if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
+  const paksaTur = h === 'tour';
+  if (paksaTur) history.replaceState(null, '', location.pathname + location.search);
   setMe(U);
   render();
+  // Panduan spotlight muncul otomatis sekali untuk pengguna yang belum pernah melihatnya
+  if (paksaTur || !prefOf(U).tour) setTimeout(startTour, 500);
   // hitung mundur absen; saat habis, tampilan partisipan dimuat ulang (pengajar: hanya angka, agar form tidak terhapus)
   setInterval(() => {
     let habis = false;

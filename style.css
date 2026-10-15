@@ -258,9 +258,28 @@ html[data-fs="kecil"] .wrap{zoom:.92}
 .meter{height:10px;background:#e8eee9;border-radius:99px;overflow:hidden;margin:12px 0 6px}
 .meter i{display:block;height:100%;background:var(--g7);border-radius:99px}
 .meter.hi i{background:var(--red)}
-.guide{border:1px solid var(--bd);border-radius:11px;padding:0 14px;margin:8px 0;background:#fff}
-.guide summary{padding:12px 0;font-weight:600;cursor:pointer}
-.guide p{margin:0 0 12px;color:var(--mu);line-height:1.6;font-size:14px}
+/* ===== PANDUAN SPOTLIGHT ===== */
+.tr{position:fixed;inset:0;z-index:30}
+.tr-dim{position:absolute;inset:0;background:#0c2a1fbb;opacity:0;transition:opacity .25s}
+.tr.nohole .tr-dim{opacity:1}
+.tr-hole{position:fixed;border-radius:12px;box-shadow:0 0 0 3px var(--lime),0 0 0 9999px #0c2a1fbb;pointer-events:none;opacity:1;transition:left .25s,top .25s,width .25s,height .25s,opacity .25s}
+.tr.nohole .tr-hole{opacity:0}
+.tr-tip{position:fixed;left:0;top:0;width:min(340px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;background:#fff;color:var(--tx);border-radius:16px;padding:16px 18px 18px;box-shadow:0 14px 40px #0c2a1f66;opacity:0;transition:left .25s,top .25s,opacity .2s}
+.tr-tip.rdy{opacity:1}
+.tr-tip.mid{width:min(440px,calc(100vw - 24px))}
+.tr-tip:focus{outline:none}
+.tr-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tr-n{font-size:11.5px;font-weight:700;color:var(--mu);letter-spacing:.05em;text-transform:uppercase}
+.tr-skip{background:none;border:0;color:var(--mu);font-size:13px;padding:4px 2px;text-decoration:underline}
+.tr-tip h3{margin:6px 0 6px;font-size:18px}
+.tr-tip p{margin:0;color:var(--mu);font-size:14px;line-height:1.6}
+.tr-tip ul{margin:8px 0 0;padding-left:18px;color:var(--mu);font-size:14px;line-height:1.6}
+.tr-tip li{margin:5px 0}
+.tr-tip b{color:var(--tx)}
+.tr-foot{display:flex;align-items:center;gap:8px;margin-top:16px}
+.tr-dots{display:flex;align-items:center;gap:5px;flex:1}
+.tr-dots i{width:7px;height:7px;border-radius:99px;background:var(--bd);transition:width .2s,background .2s}
+.tr-dots i.on{width:18px;background:var(--g7)}
 
 /* ===== Peran di bilah atas: lencana yang jelas ===== */
 .meTop .mtxt>.msub{display:flex;align-items:center;justify-content:flex-end;gap:8px;overflow:visible;margin-top:2px}
