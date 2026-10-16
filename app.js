@@ -1157,6 +1157,7 @@ function showTab(reg) {
   $('#tReg').classList.toggle('on', reg);
   $('#tLogin').setAttribute('aria-selected', !reg);
   $('#tReg').setAttribute('aria-selected', reg);
+  document.querySelector('.auth').classList.toggle('reg', reg);
 }
 $('#tLogin').onclick = () => showTab(false);
 $('#tReg').onclick = () => showTab(true);
