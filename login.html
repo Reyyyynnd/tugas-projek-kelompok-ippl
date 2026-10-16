@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Masuk – KelasBelajar</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body data-page="login">
 <div class="auth">
   <section class="hero">
-    <div class="logo" style="border:0"><i>🎓</i><div>KelasBelajar<small>Belajar rapi, tugas beres</small></div></div>
+    <div class="logo" style="border:0"><img src="logo.svg" alt="" width="38" height="38"><div>KelasBelajar<small>Platform belajar dan mengajar untuk semua kalangan</small></div></div>
     <div class="stage" aria-hidden="true">
       <svg class="sp s1" viewBox="0 0 20 20"><path d="M10 0C11 6 14 9 20 10C14 11 11 14 10 20C9 14 6 11 0 10C6 9 9 6 10 0Z"/></svg>
       <svg class="sp s2" viewBox="0 0 20 20"><path d="M10 0C11 6 14 9 20 10C14 11 11 14 10 20C9 14 6 11 0 10C6 9 9 6 10 0Z"/></svg>
@@ -58,8 +59,8 @@
       <div class="chips chips-reg"><span>⚡ Cuma 1 menit</span><span>🎒 Partisipan</span><span>👩‍🏫 Pengajar</span><span>📚 Langsung belajar</span></div>
     </div>
     <div>
-      <h2>Semua pelajaranmu, satu tempat.</h2>
-      <p>Pantau absen, kirim tugas, baca materi, dan kerjakan quiz dari pengajar.</p>
+      <h2>Ikuti pelajaranmu, dalam satu tempat</h2>
+      <p>Pantau pertemuan selanjutnya, isi absen, baca materi, kirim tugas, dan kerjakan quiz dari pengajar</p>
     </div>
   </section>
 
@@ -78,6 +79,7 @@
     </g>
   </svg>
   <section class="panel">
+    <div class="pscroll">
     <div class="box">
       <div class="tabs" role="tablist">
         <button type="button" id="tLogin" role="tab" class="on">Masuk</button>
@@ -99,7 +101,7 @@
 
       <form id="fReg" novalidate hidden>
         <h1>Buat akun baru</h1>
-        <div class="warnbox" role="note">⚠️ <b>Perhatian sebelum mendaftar:</b> <b>nama lengkap, peran, dan minat belajar tidak dapat diubah</b> setelah akun dibuat, jadi isi dengan benar. Hanya <b>No. HP dan Gmail</b> yang masih bisa diubah nanti di halaman profil.</div>
+        <div class="warnbox" role="note">⚠️ <b>Peringatan:</b> perhatikan bahwa sebelum mendaftar pastikan nama lengkap, peran, dan minat belajar sudah benar karena setelah mendaftar tidak dapat diubah.</div>
         <fieldset class="roles">
           <legend>Daftar sebagai</legend>
           <label><input type="radio" name="role" value="Partisipan" checked><span>🎒 Partisipan</span></label>
@@ -108,19 +110,17 @@
         <label class="f">Nama lengkap
           <input id="rNama" autocomplete="name" required>
         </label>
+        <label class="f"><span id="idLabel">ID</span>
+          <input id="rId" maxlength="30" placeholder="tanda pengenal" autocomplete="off" required>
+        </label>
+        <label class="f">Minat belajar
+          <input id="rProdi" maxlength="60" placeholder="contoh: teknik informatika" autocomplete="off" required>
+        </label>
         <label class="f">Email Gmail
           <input type="email" id="rEmail" placeholder="nama@gmail.com" autocomplete="email" required>
         </label>
-        <div class="two">
-          <label class="f"><span id="idLabel">ID</span>
-            <input id="rId" maxlength="30" placeholder="ID pilihanmu, mis. AB-1024" autocomplete="off" required>
-          </label>
-          <label class="f">No. HP
-            <input id="rHp" inputmode="tel" placeholder="08xxxxxxxxxx" required>
-          </label>
-        </div>
-        <label class="f">Minat belajar
-          <input id="rProdi" maxlength="60" placeholder="mis. pemrograman web" autocomplete="off" required>
+        <label class="f">No. HP
+          <input id="rHp" inputmode="tel" placeholder="08xxxxxxxxxx" required>
         </label>
         <label class="f">Kata sandi (min. 8 karakter)
           <input type="password" id="rPass" autocomplete="new-password" required>
@@ -134,9 +134,10 @@
         <p class="alt">Sudah punya akun? <a href="#" id="toLogin">Masuk</a></p>
       </form>
     </div>
+    </div>
   </section>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
