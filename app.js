@@ -1146,6 +1146,21 @@ function initBeranda() {
 }
 
 /* ===== HALAMAN LOGIN ===== */
+// Petunjuk gulir: muncul bila isi panel putih masih panjang ke bawah (hanya saat panel itu yang bisa digulir)
+function initScrollHint() {
+  const sc = document.querySelector('.pscroll'), box = document.querySelector('.box'), panel = document.querySelector('.panel');
+  if (!sc || !panel) return;
+  let f = document.querySelector('.pfade');          // dibuat otomatis bila belum ada di login.html
+  if (!f) { f = document.createElement('div'); f.className = 'pfade'; f.setAttribute('aria-hidden', 'true'); panel.appendChild(f); }
+  const upd = () => {
+    const can = getComputedStyle(sc).overflowY === 'auto' && sc.scrollHeight - sc.clientHeight > 8;
+    f.classList.toggle('on', can && sc.scrollHeight - sc.scrollTop - sc.clientHeight > 8);
+  };
+  sc.addEventListener('scroll', upd, { passive: true });
+  window.addEventListener('resize', upd);
+  if (window.ResizeObserver && box) new ResizeObserver(upd).observe(box);
+  upd();
+}
 function initLogin(){
 
 if (new URLSearchParams(location.search).has('dihapus')) toast('Akun kamu sudah dihapus permanen.');
@@ -1403,7 +1418,7 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
     if (PAGE === 'login') {
       const { data: { session } } = await sb.auth.getSession();
       if (session) { location.replace('index.html'); return; }
-      initLogin(); return;
+      initLogin(); initScrollHint(); return;
     }
     if (!(await loadAll())) { location.replace('login.html'); return; }
     applyPref();
