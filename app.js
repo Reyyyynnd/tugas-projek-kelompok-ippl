@@ -145,7 +145,17 @@ const Auth = {
     return u;
   },
   requireLogin() { const u = this.session(); if (!u) location.replace('login.html'); return u; },
-  async logout() { try { await Q; await sb.auth.signOut(); } catch (e) {} location.href = 'login.html'; }
+  // Keluar tidak boleh macet: tunggu simpanan yang tertunda dan permintaan ke server paling lama 3 detik,
+  // lalu hapus sesi di perangkat ini (scope local) dan token lokalnya, baru pindah ke halaman login.
+  async logout() {
+    if (this._out) return; this._out = true;
+    const tunggu = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => setTimeout(r, ms))]);
+    try { if (typeof TOUR !== 'undefined' && TOUR.on) endTour(); } catch (e) {}
+    await tunggu(Q, 3000);
+    await tunggu(sb.auth.signOut({ scope: 'local' }), 3000);
+    try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    location.replace('login.html');
+  }
 };
 
 const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v).trim());
