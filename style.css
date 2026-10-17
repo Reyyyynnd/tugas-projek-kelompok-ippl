@@ -277,6 +277,7 @@ html[data-fs="kecil"] .wrap{zoom:.92}
 .tr-tip li{margin:5px 0}
 .tr-tip b{color:var(--tx)}
 .tr-foot{display:flex;align-items:center;gap:8px;margin-top:16px}
+.tr-b{flex:none;width:80px;min-width:80px;justify-content:center;text-align:center}
 .tr-dots{display:flex;align-items:center;gap:5px;flex:1}
 .tr-dots i{width:7px;height:7px;border-radius:99px;background:var(--bd);transition:width .2s,background .2s}
 .tr-dots i.on{width:18px;background:var(--g7)}

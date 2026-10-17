@@ -1011,26 +1011,28 @@ function settings() {
 // ---------- PANDUAN SPOTLIGHT (panduan penggunaan awal) ----------
 // Menyorot menu utama satu per satu dengan latar gelap. Muncul otomatis sekali untuk pengguna baru
 // (penanda u.pref.tour disimpan di akun) dan bisa dibuka lagi dari Pengaturan atau footer.
-const TOUR = { on: false, i: 0, steps: [], raf: 0, key: '', prev: null };
+const TOUR = { on: false, i: 0, steps: [], raf: 0, key: '', prev: null, v0: null };
 function tourSteps() {
   const nm = esc((U.nama || '').split(' ')[0] || 'kamu'), N = i => `#nav button:nth-child(${i})`, d = isDosen;
+  const merah = t => `<span style="color:#d62f2f">${t}</span>`;
+  // v = menu yang dibuka otomatis saat langkah itu tampil; t = elemen yang disorot
   return [
-    { h: `Selamat datang, ${nm}! 👋`, p: `Tur singkat ini menyorot menu utama KelasBelajar dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}. Hanya sekitar satu menit.` },
-    { t: N(1), h: 'Beranda', p: d ? 'Ringkasan pelajaranmu, termasuk pengingat jumlah tugas yang belum dinilai.' : 'Lihat pengingat absen yang sedang dibuka, tugas dan quiz yang batasnya segera berakhir, serta progres belajarmu.' },
-    d ? { t: N(2), h: 'Pelajaran', p: 'Mulai dari sini.', l: ['Tekan <b>Buat pelajaran</b>, lalu buat kelas di dalamnya (misalnya A, B, C).', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung.', 'Pelajaran dan kelas bisa diubah atau dihapus dari halamannya. Hati-hati, penghapusan bersifat permanen dan ikut menghapus pertemuan serta data partisipan.'] }
-      : { t: N(2), h: 'Pelajaran', p: 'Mulai dari sini.', l: ['Tekan <b>Masuk kelas</b>, lalu masukkan kode kelas dari pengajarmu.', 'Setelah bergabung, pelajaran muncul di sini lengkap dengan absen, materi, tugas, dan quiz.'] },
-    d ? { h: 'Setelah kelas dibuat', p: 'Buka kelas, tekan <b>Info selengkapnya</b>, lalu atur pertemuan:', l: ['<b>Tambah pertemuan:</b> centang Materi (maks. 5 file atau link), Tugas, atau Quiz, lalu atur batas waktu dan batas absen mandiri.', '<b>Pengumpulan:</b> lihat file langsung tanpa mengunduh, beri nilai dan catatan, atau tekan Kembalikan agar partisipan mengerjakan ulang.', '<b>Absensi:</b> ubah status kehadiran kapan saja, termasuk setelah batas absen mandiri lewat.'] }
-      : { h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen:</b> tekan Absen sekarang sebelum waktunya habis. Jika terlewat, minta pengajar mengabsenmu.', '<b>Materi:</b> tekan Lihat untuk membukanya langsung di halaman tanpa mengunduh. Link dibuka di tab baru.', '<b>Tugas:</b> tambahkan file atau link (maksimal 5), hapus yang salah, lalu tekan Kirim tugas. Tugas yang dikembalikan bisa dikirim ulang.', '<b>Quiz:</b> soal bisa langsung dikerjakan. Untuk quiz berupa link atau file, kerjakan di link yang diberikan lalu tekan Tandai selesai atau kirim hasilmu.', 'Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.'] },
-    { t: N(3), h: 'Progres', p: d ? 'Pantau kehadiran serta penyelesaian tugas dan quiz di tiap kelas.' : 'Pantau kehadiran dan tugas yang sudah selesai di setiap pelajaran.' },
-    { t: N(4), h: 'Pengaturan', p: 'Atur ukuran teks dan pengingat, lihat data akunmu, atau ulangi panduan ini kapan saja.' },
-    { t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas untuk membuka profil, mengubah kontak, dan mengatur keamanan akunmu.' },
-    { t: '.foot .fgrid > div:last-child', h: 'Butuh bantuan?', p: `Hubungi kami lewat email atau WhatsApp di sini kalau ada kendala atau saran. Panduan ini bisa dibuka lagi lewat Pengaturan atau footer. Selamat ${d ? 'mengajar' : 'belajar'}! 🎉` }
+    { v: 'home', h: `Selamat datang, ${nm}! 😉`, p: `Karena kamu orang baru di sini, ini adalah tutorial yang menyorot dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}.` },
+    { v: 'home', t: N(1), h: 'Beranda', p: d ? 'Berisi ringkasan pertemuan dalam pelajaran termasuk pengingat jumlah tugas yang belum dinilai.' : 'Lihat pengingat absen yang sedang dibuka, tugas, atau quiz yang segera berakhir serta progres belajarmu.' },
+    d ? { v: 'courses', t: N(2), h: 'Pelajaran', p: 'Di dalam menu pelajaran terdapat beberapa fitur seperti:', l: ['<b>Buat pelajaran</b> lalu di dalam pelajaran yang sudah dibuat bisa membuat kelasnya, contoh A, B, C.', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung.', 'Pelajaran dan kelas yang sudah dibuat ' + merah('bisa dihapus permanen') + ' dan progres yang ada di dalamnya tidak dapat dikembalikan lagi, maka <b>berhati-hatilah</b> dan pastikan pilihan anda sudah benar.'] }
+      : { v: 'courses', t: N(2), h: 'Pelajaran', p: 'Di dalam menu pelajaran terdapat beberapa fitur seperti:', l: ['Tekan <b>masuk kelas</b> lalu masukkan kode kelas dari pengajarmu.', '<b>Setelah bergabung</b> pelajaran akan muncul di sini lengkap dengan informasi absen, materi, tugas, dan quiz jika pengajarmu membuat pertemuan baru.'] },
+    d ? { v: 'courses', h: 'Setelah kelas berhasil dibuat', p: 'Buka kelas dan tekan info selengkapnya lalu atur pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Tambah pertemuan:</b> jika di dalam pertemuan ada materi, tugas, atau quiz maka centang opsinya dan berikan maksimal 5 file atau link.', '<b>Pengumpulan:</b> file yang sudah dikumpulkan oleh partisipan dapat dilihat langsung tanpa mengunduhnya dan pengajar bisa memberikan nilai, catatan, atau mengembalikan file yang sudah dikumpulkan partisipan jika terdapat kesalahan.', '<b>Absensi:</b> status kehadiran partisipan bisa diubah kapan saja.'] }
+      : { v: 'courses', h: 'Setelah berhasil gabung pelajaran', p: 'Buka pelajaranmu lalu pilih pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Absen:</b> tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu.', '<b>Materi:</b> lihat materi yang dibuat pengajarmu tanpa mengunduh atau bisa diunduh.', '<b>Tugas:</b> tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas, dan jika pengajar mengembalikan tugasmu perbaiki tugasnya lalu kirim ulang tugas tersebut.', '<b>Quiz:</b> quiz berupa link atau file. Jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan.', merah('Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.')] },
+    { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas.' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran.' },
+    { v: 'settings', t: N(4), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja.' },
+    { v: 'settings', t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu.' },
+    { v: 'settings', t: '.foot .fgrid > div:last-child', h: 'Butuh bantuan?', p: `Hubungi kami lewat Email atau WhatsApp di sini jika ada kendala atau saran. Selamat ${d ? 'mengajar' : 'belajar'} ✨` }
   ];
 }
 function startTour() {
   if (PAGE !== 'beranda' || !U || TOUR.on) return;
   tutupModal();
-  TOUR.on = true; TOUR.steps = tourSteps(); TOUR.prev = document.activeElement;
+  TOUR.on = true; TOUR.steps = tourSteps(); TOUR.prev = document.activeElement; TOUR.v0 = S.view;
   const r = document.createElement('div');
   r.id = 'tour'; r.className = 'tr nohole';
   r.innerHTML = '<div class="tr-dim"></div><div class="tr-hole"></div><div class="tr-tip" id="trTip" role="dialog" aria-modal="true" aria-labelledby="trH" tabindex="-1"></div>';
@@ -1043,10 +1045,12 @@ function startTour() {
 function tourShow(i) {
   const s = TOUR.steps[i], n = TOUR.steps.length, last = i === n - 1, tip = $('#trTip');
   TOUR.i = i; TOUR.key = '';
+  // buka menu yang sedang dijelaskan secara otomatis
+  if (s.v && S.view !== s.v) { S.view = s.v; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
   tip.classList.toggle('mid', !s.t);
   tip.innerHTML = `<div class="tr-top"><span class="tr-n">Langkah ${i + 1} dari ${n}</span>${last ? '' : '<button class="tr-skip" onclick="endTour()">Lewati</button>'}</div>
     <h3 id="trH">${s.h}</h3><p>${s.p}</p>${s.l ? '<ul>' + s.l.map(x => `<li>${x}</li>`).join('') + '</ul>' : ''}
-    <div class="tr-foot"><div class="tr-dots" aria-hidden="true">${TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>${i ? '<button class="btn ghost" onclick="tourGo(-1)">Kembali</button>' : ''}<button class="btn lime" id="trNext" onclick="tourGo(1)">${last ? 'Selesai' : i ? 'Lanjut' : 'Mulai'}</button></div>`;
+    <div class="tr-foot"><div class="tr-dots" aria-hidden="true">${TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div><button class="btn ghost tr-b" onclick="tourGo(-1)"${i ? '' : ' tabindex="-1" aria-hidden="true" style="visibility:hidden"'}>Kembali</button><button class="btn lime tr-b" id="trNext" onclick="tourGo(1)">${last ? 'Selesai' : i ? 'Lanjut' : 'Mulai'}</button></div>`;
   tip.scrollTop = 0;
   const el = s.t && document.querySelector(s.t);
   if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
@@ -1100,6 +1104,7 @@ function endTour() {
   TOUR.on = false; cancelAnimationFrame(TOUR.raf);
   document.removeEventListener('keydown', tourKey, true);
   const r = $('#tour'); if (r) r.remove();
+  if (TOUR.v0 && S.view !== TOUR.v0) { S.view = TOUR.v0; S.edit = null; S.pfKey = null; render(); }
   if (U && !prefOf(U).tour) { U.pref = { ...prefOf(U), tour: true }; Auth.update(U.email, { pref: U.pref }); }
   window.scrollTo(0, 0);
   const pv = TOUR.prev; TOUR.prev = null;
