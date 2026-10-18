@@ -308,12 +308,12 @@ function stats(m, em) {
 
 // ---------- helper tampilan ----------
 const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff', '#e5f8ec', '#fff3dc', '#ece8ff', '#ffe9ec', '#e2f6f6'];
-const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i] }; };
+const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i], i }; };
 const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
 const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="profil.html"><b>Verifikasi sekarang</b></a></div>';
 const head = () => heroB() + banner();
 const empty = (ic, t, d, btn) => `<div class="card empty-s"><div class="big-ic">${ic}</div><h3>${t}</h3><p class="quote">${d}</p>${btn}</div>`;
-const sc = (l, v, ic, bg, c, sub, cls, act) => `<div class="card stat${act ? ' click' : ''}"${act ? ` role="button" tabindex="0" onclick="${act}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"` : ''}><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${typeof v === 'number' ? `<span class="cnt" data-to="${v}">${v}</span>` : v}</div>${sub ? `<div class="ssub">${sub}</div>` : ''}</div><div class="ic ${cls || ''}" style="background:${bg}">${ic}</div>${act ? '<span class="more">Lihat detail ›</span>' : ''}</div>`;
+const sc = (l, v, ic, bg, c, sub, cls, act, pop) => `<div class="card stat${act ? ' click' : ''}"${act ? ` role="button" tabindex="0" onclick="${act}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"` : ''}><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${typeof v === 'number' ? `<span class="cnt" data-to="${v}">${v}</span>` : v}</div>${sub ? `<div class="ssub">${sub}</div>` : ''}</div><div class="ic ${cls || ''}" style="background:${bg}">${ic}</div>${act ? '<span class="more">Lihat detail ›</span>' : ''}${pop || ''}</div>`;
 const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
 const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}</h1><div class="quote">${m.kode ? esc(m.kode) + ' · ' : ''}${sub}</div></div></div>`; };
 const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
@@ -330,18 +330,131 @@ const fmt = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return String(M
 const cd = x => `<span data-exp="${absenExp(x)}">${fmt(absenExp(x) - Date.now())}</span>`;
 
 function courseCards(L) {
-  return `<div class="courses">${L.map(m => {
-    const d = dec(m); let sub, foot, held;
+  return `<div class="courses pcs" id="pcs">${L.map((m, idx) => {
+    const d = dec(m); let sub, foot, held, pill = '', pop = '', tip = '';
     if (isDosen) {
-      held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; sub = `${m.kelas.length} kelas · ${studentsOf(m.id).length} partisipan`;
-      foot = `<span>Pertemuan berjalan ${totalPert(m)} (semua kelas)</span><span>${m.kelas.length ? 'Lihat kelas →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
+      held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; sub = `${studentsOf(m.id).length} partisipan`;
+      pill = `<span class="pc-pill">${m.kelas.length} kelas</span>`;
+      foot = `<span>Pertemuan berjalan ${totalPert(m)}</span><span>${m.kelas.length ? 'Buka pelajaran →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
+      // Saat kartu di-hover: daftar kelas yang bisa langsung dibuka (popover di luar kartu, lihat initPcTip)
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">🏷️</span><div><b>Pilih kelas</b><small>${esc(m.nama)} · masuk langsung</small></div></div><div class="hv-body">${m.kelas.length
+        ? m.kelas.map(k => `<button type="button" class="kchip" onclick="event.stopPropagation();bukaKelasDari('${m.id}','${k.id}')"><i>${esc(k.nama.trim().slice(-1).toUpperCase())}</i><span><b>${esc(k.nama)}</b><small>${studentsOf(m.id, k.id).length} partisipan · ${esc(k.kode)}</small></span><em>→</em></button>`).join('')
+        : '<div class="hv-row muted">Belum ada kelas. Klik pelajaran ini untuk membuatnya.</div>'}</div><div class="hv-foot"><span></span><span>Klik pelajaran untuk semua kelas ›</span></div></div>`;
     } else {
-      const s2 = stats(m, U.email); held = s2.held; sub = esc(m.dosenNama);
+      const s2 = stats(m, U.email), p = P(m.id, U.email); held = s2.held; sub = esc(m.dosenNama);
       const mw = [s2.todoT && `${s2.todoT} tugas`, s2.todoQ && `${s2.todoQ} quiz`].filter(Boolean).join(' & ');
       foot = `<span>Pertemuan ${s2.held}/${TOTAL}</span><span>${mw ? `<b style="color:var(--red)">${mw} menunggu</b>` : 'Tugas beres'}</span>`;
+      if (pertOf(m, U.email).some(x => absenOpen(x) && !p.att[x.n])) pill = '<span class="pc-pill live">🔔 Absen dibuka</span>';
+      // Saat kartu di-hover: ringkasan total pertemuan dan tugas selesai (popover di luar kartu, lihat initPcTip)
+      const lw = s2.lewat ? ` · <b class="neg">terlewat ${s2.lewat}</b>` : '';
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">${d.ic}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
     }
-    return `<button class="course" onclick="go('course','${m.id}')"><div class="hd"><div class="ic" style="background:${d.col}">${d.ic}</div><div><b>${esc(m.nama)}</b><span class="s">${sub}</span></div></div><div class="bar"><i style="width:${held / TOTAL * 100}%"></i></div><div class="meta">${foot}</div></button>`;
+    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${d.ic}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${held / TOTAL * 100}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
   }).join('')}</div>`;
+}
+// ===== Popover hover di luar kartu =====
+// Kartu yang punya <div class="hv-src" hidden data-dir="right|left|below|auto" data-th="..."> akan memunculkan popover berpanah
+// di luar kotaknya saat di-hover atau difokus, dan semua elemen lain di halaman diburamkan. Klik kartu/popover tetap membuka detail.
+let hvEl = null, hvCur = null, hvBl = [], hvT = 0, hvPend = null, hvShowT = 0;
+const HV_DELAY = 1500;   // jeda (ms) setelah kursor berada di kartu sebelum popover muncul; ubah angka ini untuk mengatur lamanya
+// Hitung posisi popover terhadap kartu (r = kotak kartu). Arah yang tidak muat di layar otomatis pindah ke bawah/atas.
+function hvPlace(r, dir, w, h, vw, vh, pr) {
+  const G = 12, M = 8, fitR = vw - r.right >= w + G + M, fitL = r.left >= w + G + M, cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  if (dir === 'auto') {   // kartu pelajaran: kolom paling kiri -> popover ke kanan, paling kanan -> ke kiri, selain itu -> ke bawah
+    const first = pr && r.left - pr.left < 8, last = pr && pr.right - r.right < 8;
+    dir = first && !last && fitR ? 'right' : last && !first && fitL ? 'left' : fitR && fitL ? 'below' : fitR && !pr ? 'right' : fitL && !pr ? 'left' : 'below';
+  }
+  if ((dir === 'right' && !fitR) || (dir === 'left' && !fitL)) dir = 'below';
+  let top, left, ax = 0, ay = 0;
+  if (dir === 'right' || dir === 'left') {
+    left = dir === 'right' ? r.right + G : r.left - G - w;
+    top = Math.min(Math.max(M, cy - 28), Math.max(M, vh - h - M));   // kepala popover sejajar dengan tengah kartu
+    ay = Math.min(Math.max(20, cy - top), h - 20);
+  } else {
+    if (r.bottom + G + h > vh - M && r.top - G - h > M) { dir = 'above'; top = r.top - G - h; } else top = r.bottom + G;
+    left = Math.min(Math.max(M, cx - w / 2), Math.max(M, vw - w - M));
+    ax = Math.min(Math.max(24, cx - left), w - 24);
+  }
+  return { dir, top, left, ax, ay };
+}
+// Buramkan semua elemen kecuali kartu yang difokuskan (dan induknya)
+function hvBlur(card) {
+  hvUnblur();
+  let a = card;
+  while (a && a !== document.body && a.parentElement) {
+    [...a.parentElement.children].forEach(s => {
+      if (s !== a && !/^(SCRIPT|STYLE|LINK)$/.test(s.tagName) && !s.classList.contains('hv-tip') && !['layer', 'tour'].includes(s.id) && !s.classList.contains('toast')) { s.classList.add('hv-blur'); hvBl.push(s); }
+    });
+    a = a.parentElement;
+  }
+}
+function hvUnblur() { hvBl.forEach(s => s.classList.remove('hv-blur')); hvBl = []; }
+function cancelPcWait() { clearTimeout(hvShowT); if (hvPend) hvPend.classList.remove('hv-wait'); hvPend = null; }
+function hidePcTip() { clearTimeout(hvT); cancelPcWait(); if (hvEl) hvEl.classList.remove('on'); hvUnblur(); hvCur = null; }
+function hvLater() { clearTimeout(hvT); hvT = setTimeout(hidePcTip, 160); }
+function showPcTip(card) {
+  clearTimeout(hvT);
+  const src = card.querySelector(':scope > .hv-src'); if (!src) { hidePcTip(); return; }
+  if (typeof TOUR !== 'undefined' && TOUR.on) return;
+  if (!hvEl) {
+    hvEl = document.createElement('div'); hvEl.setAttribute('role', 'tooltip'); document.body.appendChild(hvEl);
+    hvEl.addEventListener('mouseenter', () => clearTimeout(hvT));
+    hvEl.addEventListener('mouseleave', hvLater);
+    hvEl.addEventListener('click', e => { if (e.target.closest('button,a')) return; const c = hvCur; hidePcTip(); if (c) c.click(); });
+  }
+  hvCur = card;
+  hvEl.className = 'hv-tip ' + (src.dataset.th || '');
+  hvEl.innerHTML = '<i class="hv-arw"></i>' + src.innerHTML;
+  hvBlur(card);
+  const r = card.getBoundingClientRect(), dir0 = src.dataset.dir || 'auto';
+  hvEl.style.width = '300px';
+  const pr = card.parentElement ? card.parentElement.getBoundingClientRect() : null;
+  let p = hvPlace(r, dir0, 300, hvEl.offsetHeight, innerWidth, innerHeight, pr), w = 300;
+  if (p.dir === 'below' || p.dir === 'above') {   // di bawah/atas kartu, lebar mengikuti kartu
+    w = Math.max(300, Math.min(r.width, 420)); hvEl.style.width = w + 'px';
+    p = hvPlace(r, p.dir, w, hvEl.offsetHeight, innerWidth, innerHeight, pr);
+  }
+  hvEl.classList.add('d-' + p.dir);
+  hvEl.style.top = p.top + 'px'; hvEl.style.left = p.left + 'px';
+  hvEl.style.setProperty('--ax', p.ax + 'px'); hvEl.style.setProperty('--ay', p.ay + 'px');
+  const arw = hvEl.firstChild; if (arw) arw.classList.toggle('w', (p.dir === 'right' || p.dir === 'left') && p.ay > 52);
+  hvEl.classList.add('on');
+}
+function initPcTip() {
+  document.documentElement.style.setProperty('--hv-delay', HV_DELAY + 'ms');
+  const ok = () => window.matchMedia && matchMedia('(hover:hover)').matches;
+  const trg = e => { const c = e.target && e.target.closest && e.target.closest('.stat.click, .pc'); return c && c.querySelector(':scope > .hv-src') ? c : null; };
+  document.addEventListener('mouseover', e => {
+    if (!ok()) return;
+    const c = trg(e);
+    if (c) {
+      clearTimeout(hvT);
+      if (c === hvCur || c === hvPend) return;   // popover sudah tampil, atau kartu ini sedang menunggu jeda
+      hidePcTip();                                // tutup popover kartu lain dan batalkan penantian sebelumnya
+      hvPend = c; c.classList.add('hv-wait');
+      hvShowT = setTimeout(() => {
+        const k = hvPend; hvPend = null;
+        if (k) { k.classList.remove('hv-wait'); if (k.isConnected && k.matches(':hover')) showPcTip(k); }
+      }, HV_DELAY);
+    } else {
+      if (hvPend) cancelPcWait();                 // kursor keluar dari kartu sebelum jeda selesai
+      if (hvCur && !(hvEl && hvEl.contains(e.target))) hvLater();
+    }
+  });
+  document.documentElement.addEventListener('mouseleave', () => { cancelPcWait(); hvLater(); });
+  document.addEventListener('focusin', e => { const c = trg(e); if (c && ok()) showPcTip(c); });
+  document.addEventListener('focusout', () => { if (hvCur) hvLater(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePcTip(); });
+  document.addEventListener('click', e => { if ((hvCur || hvPend) && trg(e)) hidePcTip(); }, true);
+  document.addEventListener('scroll', hidePcTip, true);
+  window.addEventListener('resize', hidePcTip);
+}
+function bukaKelasDari(mkId, kid) { S.cid = mkId; bukaKelas(kid); }   // masuk langsung ke kelas dari daftar pelajaran
+function filterPelajaran(q) {
+  q = q.trim().toLowerCase(); let n = 0;
+  document.querySelectorAll('#pcs .pc').forEach(c => { const ok = !q || c.dataset.n.includes(q); c.hidden = !ok; if (ok) n++; });
+  const e = document.getElementById('pEmpty'); if (e) e.hidden = n > 0;
+  const c = document.getElementById('pCount'); if (c) c.textContent = `${n} pelajaran`;
 }
 
 // ---------- BERANDA ----------
@@ -480,7 +593,7 @@ function home() {
   const subHadir = t.held ? `Hadir ${t.hadir} kali dari ${t.held} pertemuan` + (t.lewat ? ` · <b style="color:var(--red)">terlewat ${t.lewat}</b>` : '') : 'Belum ada pertemuan';
   return hero + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
     + soonHtml(todo, pf)
-    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')")}${sc('Total tugas selesai', t.done, '✅', '#dff5e8', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')")}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')")}</div>`
+    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', t.done, '✅', '#dff5e8', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
     + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
     + `<h2>Pelajaran</h2>${courseCards(L)}`;
 }
@@ -512,14 +625,24 @@ function statDetail(kind) {
   const body = rows.length ? Object.values(by).map(g => `<div class="sdg"><div class="sdh">${esc(g.m.nama)}<span>${g.rows.length}</span></div>${g.rows.map(r => `<button class="todo" onclick="tutupModal();bukaItem('${r.m.id}',${r.x.n})"><span class="chip ${r.chip[1]}">${r.chip[0]}</span><span>Pertemuan ${r.x.n}: ${esc(r.x.topik)}</span>${r.note ? `<span class="quote">${r.note}</span>` : ''}${dlChip(r.dl)}</button>`).join('')}</div>`).join('') : `<div class="quote" style="padding:18px 0">${kosong}</div>`;
   modal(`<h3>${ttl}</h3><div class="quote" style="margin-bottom:12px">${ringkas}${rows.length ? ' · tekan salah satu untuk membukanya' : ''}</div>${body}`);
 }
+// Isi popover kartu "Progres keseluruhan" (muncul di luar kartu saat di-hover; dir = arah munculnya), klik kartu untuk daftar lengkap
+function statPop(kind, dir) {
+  const rows = statRows(kind), K = { todo: ['📝', 'Tugas yang harus diselesaikan'], done: ['✅', 'Total tugas selesai'], pert: ['🗓️', 'Total pertemuan'] }[kind];
+  const show = kind === 'pert' ? rows.slice(-4) : rows.slice(0, 4), sisa = rows.length - show.length;
+  const kosong = { todo: 'Semua sudah beres 🎉', done: 'Belum ada yang selesai.', pert: 'Belum ada pertemuan.' }[kind];
+  const hadir = rows.filter(r => r.chip[0] === 'Hadir').length, lewat = rows.filter(r => r.chip[0] === 'Terlewat').length;
+  const sub = kind === 'pert' ? `Hadir ${hadir} · terlewat ${lewat} · total ${rows.length}` : `${rows.length} item`;
+  return `<div class="hv-src" hidden data-dir="${dir}" data-th="k-${kind}"><div class="hv-head"><span class="hv-ic">${K[0]}</span><div><b>${K[1]}</b><small>${sub}</small></div></div><div class="hv-body">${show.length ? show.map(r => `<div class="hv-row"><span class="chip ${r.chip[1]}">${r.chip[0]}</span><span class="spt"><b>${esc(r.m.nama)}</b> · P${r.x.n}: ${esc(r.x.topik)}</span></div>`).join('') : `<div class="hv-row muted">${kosong}</div>`}</div><div class="hv-foot"><span>${sisa > 0 ? `+${sisa} lainnya` : ''}</span><span>Klik kartu untuk lihat semua ›</span></div></div>`;
+}
 function bukaItem(mkId, n) { S.view = 'course'; S.cid = mkId; S.open[mkId + '-' + n] = true; render(); window.scrollTo(0, 0); }
 
 // ---------- MATA KULIAH ----------
 function coursesPage() {
   const L = myMk();
-  const top = `<div class="row" style="justify-content:space-between"><div><h1>Pelajaran</h1><p class="quote">${isDosen ? 'Pilih pelajaran, lalu kelasnya untuk mengatur pertemuan.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<button class="btn lime" onclick="joinModal()">+ Masuk kelas</button>'}</div>`;
+  const act = isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<button class="btn lime" onclick="joinModal()">+ Masuk kelas</button>';
+  const top = `<section class="pg-hero"><span class="pgd d1" aria-hidden="true">📚</span><span class="pgd d2" aria-hidden="true">✏️</span><span class="pgd d3" aria-hidden="true">🎒</span><div class="pgh-txt"><h1>Pelajaran</h1><p class="quote">${isDosen ? 'Arahkan kursor ke pelajaran untuk memilih kelasnya, atau klik pelajaran untuk melihat informasinya.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${act}</section>`;
   if (!L.length) return top + (isDosen ? empty('📚', 'Belum ada pelajaran', 'Buat pelajaran, lalu buat kelas beserta kode kelas untuk dibagikan ke partisipan.', btnMk) : empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar untuk melihat pelajaranmu.', btnJoin));
-  return top + `<div style="margin-top:16px">${courseCards(L)}</div>`;
+  return top + `<div class="pg-tools"><label class="pg-search"><span aria-hidden="true">🔍</span><input id="pSearch" type="search" placeholder="Cari pelajaran…" oninput="filterPelajaran(this.value)" autocomplete="off" aria-label="Cari pelajaran"></label><span class="pg-count" id="pCount">${L.length} pelajaran</span></div>${courseCards(L)}<p class="empty" id="pEmpty" hidden>Tidak ada pelajaran yang cocok.</p>`;
 }
 function coursePage() {
   const m = getMk(S.cid);
@@ -1263,6 +1386,7 @@ function go(v, id) {
   render(); window.scrollTo(0, 0); refresh();
 }
 function render() {
+  hidePcTip();
   renderNav();
   const v = S.view;
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
@@ -1271,6 +1395,7 @@ function render() {
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
 function initBeranda() {
+  initPcTip();
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
   const h = location.hash.slice(1);
   if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
