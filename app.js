@@ -166,16 +166,17 @@ function setMe(u) {
   g('meAv').textContent = (u.nama || '?').charAt(0).toUpperCase();
   g('meName').textContent = u.nama;
   g('meSub').innerHTML = `<span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span><span class="idtxt">ID ${esc(u.id)}</span>`;
+  initTop(u);
 }
 const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
 // Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, panduan dibuka langsung; di halaman lain lewat index.html#tour.
 function footerHtml() {
-  const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">Panduan penggunaan</button>` : `<a class="fl" href="index.html#tour">Panduan penggunaan</a>`;
-  return `<div class="fgrid">
-    <div><h4>Bantuan</h4>${tur}</div>
-    <div><h4>Hubungi kami</h4><a class="fl" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="fl" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
-  </div>
-  <div class="fbar"><span>© ${new Date().getFullYear()} KelasBelajar. Semua hak dilindungi.</span></div>`;
+  const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">📖 Panduan penggunaan</button>` : `<a class="fl" href="index.html#tour">📖 Panduan penggunaan</a>`;
+  return `<div class="fwrap">
+    <span class="fcopy">© ${new Date().getFullYear()} · Semua hak dilindungi</span>
+    <div class="fhelp">${tur}</div>
+    <div class="fcontact"><span class="fh">Hubungi kami</span><a class="fl" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="fl" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 ${KONTAK.wa}</a></div>
+  </div>`;
 }
 const $=s=>document.querySelector(s);
 
@@ -295,12 +296,14 @@ async function unduhRef(kind, mkId, n, j, kid) {
 }
 
 function stats(m, em) {
-  const p = P(m.id, em), pt = pertOf(m, em); let tasks = 0, done = 0;
+  const p = P(m.id, em), pt = pertOf(m, em); let tasks = 0, done = 0, todoT = 0, todoQ = 0;
   pt.forEach(x => {
-    if (x.tugas) { tasks++; if (p.sub[x.n]) done++; }
-    if (adaQuiz(x)) { tasks++; if (quizDone(p, x)) done++; }
+    if (x.tugas) { tasks++; if (p.sub[x.n]) done++; else todoT++; }
+    if (adaQuiz(x)) { tasks++; if (quizDone(p, x)) done++; else todoQ++; }
   });
-  return { hadir: Object.values(p.att).filter(v => v === 'H').length, held: pt.length, tasks, done, todo: tasks - done };
+  const hadir = Object.values(p.att).filter(v => v === 'H').length;
+  const lewat = pt.filter(x => p.att[x.n] !== 'H' && x.absen && x.absen.dur > 0 && Date.now() >= x.absen.start + x.absen.dur * 60000).length;   // absen sudah ditutup dan tidak dihadiri
+  return { hadir, held: pt.length, lewat, tasks, done, todo: tasks - done, todoT, todoQ };
 }
 
 // ---------- helper tampilan ----------
@@ -308,9 +311,9 @@ const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff',
 const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i] }; };
 const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
 const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="profil.html"><b>Verifikasi sekarang</b></a></div>';
-const head = () => `<h1>Selamat datang, ${esc(U.nama)}!</h1><p class="quote">${QUOTE}</p>${banner()}`;
+const head = () => heroB() + banner();
 const empty = (ic, t, d, btn) => `<div class="card empty-s"><div class="big-ic">${ic}</div><h3>${t}</h3><p class="quote">${d}</p>${btn}</div>`;
-const sc = (l, v, ic, bg, c) => `<div class="card stat"><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${v}</div></div><div class="ic" style="background:${bg}">${ic}</div></div>`;
+const sc = (l, v, ic, bg, c, sub, cls, act) => `<div class="card stat${act ? ' click' : ''}"${act ? ` role="button" tabindex="0" onclick="${act}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"` : ''}><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${typeof v === 'number' ? `<span class="cnt" data-to="${v}">${v}</span>` : v}</div>${sub ? `<div class="ssub">${sub}</div>` : ''}</div><div class="ic ${cls || ''}" style="background:${bg}">${ic}</div>${act ? '<span class="more">Lihat detail ›</span>' : ''}</div>`;
 const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
 const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}</h1><div class="quote">${m.kode ? esc(m.kode) + ' · ' : ''}${sub}</div></div></div>`; };
 const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
@@ -334,7 +337,8 @@ function courseCards(L) {
       foot = `<span>Pertemuan berjalan ${totalPert(m)} (semua kelas)</span><span>${m.kelas.length ? 'Lihat kelas →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
     } else {
       const s2 = stats(m, U.email); held = s2.held; sub = esc(m.dosenNama);
-      foot = `<span>Pertemuan ${s2.held}/${TOTAL}</span><span>${s2.todo > 0 ? `<b style="color:var(--red)">${s2.todo} tugas/quiz menunggu</b>` : 'Tugas beres'}</span>`;
+      const mw = [s2.todoT && `${s2.todoT} tugas`, s2.todoQ && `${s2.todoQ} quiz`].filter(Boolean).join(' & ');
+      foot = `<span>Pertemuan ${s2.held}/${TOTAL}</span><span>${mw ? `<b style="color:var(--red)">${mw} menunggu</b>` : 'Tugas beres'}</span>`;
     }
     return `<button class="course" onclick="go('course','${m.id}')"><div class="hd"><div class="ic" style="background:${d.col}">${d.ic}</div><div><b>${esc(m.nama)}</b><span class="s">${sub}</span></div></div><div class="bar"><i style="width:${held / TOTAL * 100}%"></i></div><div class="meta">${foot}</div></button>`;
   }).join('')}</div>`;
@@ -362,24 +366,151 @@ const soonHtml = (todo, pf) => {
   const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < 864e5);
   return t.length ? `<h2>⏰ Segera berakhir</h2>${t.map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip c-no">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '';
 };
+// ---------- elemen Beranda: hero dengan langit animasi, kutipan bergilir, bilah atas ----------
+const sapa = () => { const h = new Date().getHours(); return h < 11 ? ['Selamat pagi', '🌅'] : h < 15 ? ['Selamat siang', '☀️'] : h < 18 ? ['Selamat sore', '🌇'] : ['Selamat malam', '🌙']; };
+const tglID = () => new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const skyOf = () => { const h = new Date().getHours(); return h < 11 ? 'pagi' : h < 15 ? 'siang' : h < 18 ? 'sore' : 'malam'; };
+const QUOTES = [QUOTE,
+  '“Pendidikan adalah senjata paling ampuh untuk mengubah dunia.” – Nelson Mandela',
+  '“Investasi dalam pengetahuan memberikan bunga terbaik.” – Benjamin Franklin',
+  '“Satu-satunya cara melakukan pekerjaan hebat adalah mencintai apa yang kamu lakukan.” – Steve Jobs'];
+// Langit di dalam hero: bulan dan bintang berkedip saat malam; matahari berputar dan awan lewat saat siang
+function skyHtml(k) {
+  if (k === 'malam') return '<div class="sky"><span class="moon"></span>' + Array.from({ length: 16 }, (_, i) => `<i class="star${i % 4 === 0 ? ' big' : ''}" style="left:${42 + (i * 37) % 55}%;top:${6 + (i * 53) % 82}%;animation-delay:${(i * 0.37) % 3}s"></i>`).join('') + '</div>';
+  return '<div class="sky"><span class="sun"></span><span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span></div>';
+}
+function heroB() {
+  const [g, em] = sapa(), k = skyOf();
+  return `<section class="hero-b ${k}">${skyHtml(k)}<span class="blob b1"></span><span class="blob b2"></span>
+    <div class="hb-txt"><div class="hb-eyebrow">${em} ${g} · ${tglID()}</div><h1>Selamat datang, ${esc(U.nama)}!</h1><p class="hb-quote" id="hbQuote">${QUOTES[0]}</p></div></section>`;
+}
+// Cincin mini persentase kehadiran di dalam kartu "Total pertemuan"
+const miniRing = pct => `<svg class="mring" viewBox="0 0 60 60" style="--p:${pct}" aria-hidden="true"><circle class="bg" cx="30" cy="30" r="25"/><circle class="fg" cx="30" cy="30" r="25"/></svg><b class="cnt" data-to="${pct}" data-suf="%">${pct}%</b>`;
+const SCENE = `<svg viewBox="0 0 232 80" aria-hidden="true">
+  <ellipse class="glow" cx="196" cy="42" rx="30" ry="24" fill="#ffe9a8" opacity=".38"/>
+  <text class="ide i1" x="62" y="13" font-size="12">💡</text><text class="ide i2" x="62" y="13" font-size="12">✨</text><text class="ide i3" x="62" y="13" font-size="12">📚</text>
+  <rect x="0" y="63" width="232" height="5" rx="2.5" fill="#b98450"/><rect x="6" y="68" width="220" height="3" rx="1.5" fill="#000" opacity=".08"/>
+  <path d="M28 63V51a16 16 0 0 1 16-16h12a16 16 0 0 1 16 16V63Z" fill="#c6f04e"/>
+  <g class="head"><rect x="45" y="30" width="10" height="9" fill="#e8b48c"/><circle cx="50" cy="22" r="13" fill="#f2c5a0"/>
+    <path d="M37 20a13 13 0 0 1 26 0q-5-7-13-6-8-1-13 6z" fill="#2b1f1a"/>
+    <path d="M36 21a14 14 0 0 1 28 0" stroke="#1f3a4d" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="36" cy="25" r="4" fill="#1f3a4d"/><circle cx="64" cy="25" r="4" fill="#1f3a4d"/>
+    <ellipse class="eye" cx="45" cy="24" rx="2" ry="2.6" fill="#1b2b24"/><ellipse class="eye" cx="55" cy="24" rx="2" ry="2.6" fill="#1b2b24"/>
+    <path d="M46 30q4 4 8 0" stroke="#1b2b24" stroke-width="2" fill="none" stroke-linecap="round"/></g>
+  <g class="type"><path d="M68 46Q78 58 92 59" stroke="#a9d63a" stroke-width="8" fill="none" stroke-linecap="round"/><circle cx="95" cy="59" r="4.5" fill="#f2c5a0"/></g>
+  <rect x="88" y="33" width="46" height="28" rx="3.5" fill="#2a343d"/><rect x="91" y="36" width="40" height="22" rx="2" fill="#143d52"/>
+  <rect class="ln l1" x="95" y="40" width="26" height="2.6" rx="1.3" fill="#6fe0c5"/><rect class="ln l2" x="95" y="46" width="32" height="2.6" rx="1.3" fill="#ffd166"/><rect class="ln l3" x="95" y="52" width="20" height="2.6" rx="1.3" fill="#ff8fa3"/>
+  <path d="M82 63H140l-4-4H86z" fill="#aeb6bf"/>
+  <rect x="152" y="51" width="13" height="12" rx="3" fill="#fff"/><path d="M165 54q6 0 6 5t-6 4" stroke="#fff" stroke-width="2.6" fill="none"/>
+  <g class="steam" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"><path d="M155 47q-3-4 0-8"/><path d="M161 47q-3-4 0-8" style="animation-delay:-1.2s"/></g>
+  <path d="M180 63V47L194 37" stroke="#2c3a46" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M190 30L205 39 198 45 185 36z" fill="#1f3a4d"/><rect x="174" y="61" width="14" height="3" rx="1.5" fill="#2c3a46"/>
+  <path d="M211 63L213 52H225L227 63Z" fill="#c8694a"/>
+  <g><ellipse class="leaf" cx="214" cy="46" rx="4" ry="9" fill="#3fae68" transform="rotate(-24 214 52)"/><ellipse class="leaf" cx="219" cy="43" rx="4" ry="10" fill="#4fc27a"/><ellipse class="leaf" cx="224" cy="46" rx="4" ry="9" fill="#3fae68" transform="rotate(24 224 52)"/></g>
+</svg>`;
+// Bilah atas (area putih): jam berjalan, hitung mundur tenggat terdekat, dan pintasan. Tidak mengulang sapaan, tanggal, atau angka yang sudah ada di Beranda.
+let TOPU = null, TOP_DL = null;
+function initTop(u) {
+  TOPU = u;
+  const top = document.querySelector('.top'); if (!top) return;
+  if (!document.getElementById('topL')) {
+    const el = document.createElement('div'); el.id = 'topL'; el.className = 'topL';
+    el.innerHTML = '<div class="tclock" id="tClock"></div>' + (PAGE === 'beranda' ? '<div class="tcd" id="tCd" hidden><span>⏳ Tenggat terdekat</span><b id="tCdv"></b></div>' : '')
+      + `<div class="tscene">${SCENE}</div>`;
+    top.insertBefore(el, top.firstChild);
+    setInterval(tickTop, 1000);
+  }
+  tickTop();
+}
+function tickTop() {
+  const c = document.getElementById('tClock'); if (!c) return;
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  c.innerHTML = `${z(d.getHours())}<i>:</i>${z(d.getMinutes())}<small>:${z(d.getSeconds())}</small>`;
+  const box = document.getElementById('tCd'); if (!box) return;
+  const diff = TOP_DL ? TOP_DL - Date.now() : 0;
+  if (diff <= 0) { box.hidden = true; return; }
+  const sec = Math.floor(diff / 1000), dd = Math.floor(sec / 86400);
+  document.getElementById('tCdv').textContent = (dd ? dd + ' hari ' : '') + `${z(Math.floor(sec % 86400 / 3600))}:${z(Math.floor(sec % 3600 / 60))}:${z(sec % 60)}`;
+  box.hidden = false;
+}
+// Tenggat terdekat dari tugas/quiz partisipan yang belum selesai
+function topInfo() {
+  TOP_DL = null; if (!U || isDosen) return;
+  let best = null;
+  myMk().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
+    const c = [];
+    if (x.tugas && !p.sub[x.n] && !p.kembali[x.n]) c.push(x.tugasDl);
+    if (adaQuiz(x) && !quizDone(p, x)) c.push(x.quizDl);
+    c.forEach(t => { if (t && t > Date.now() && (!best || t < best)) best = t; });
+  }); });
+  TOP_DL = best; tickTop();
+}
+// Angka naik dari 0 dan kutipan berganti pelan-pelan saat Beranda tampil
+let QT = 0;
+function fx() {
+  if (!QT) QT = setInterval(() => {
+    const q = document.getElementById('hbQuote'); if (!q) return;
+    q.classList.add('out');
+    setTimeout(() => { const i = (QUOTES.indexOf(q.textContent) + 1) % QUOTES.length; q.textContent = QUOTES[i]; q.classList.remove('out'); }, 450);
+  }, 9000);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('#view .cnt').forEach(el => {
+    const to = parseFloat(el.dataset.to), suf = el.dataset.suf || ''; if (isNaN(to)) return;
+    const t0 = performance.now(), dur = 900;
+    const step = t => { const k = Math.min(1, (t - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))) + suf; if (k < 1 && el.isConnected) requestAnimationFrame(step); };
+    el.textContent = '0' + suf; requestAnimationFrame(step);
+  });
+}
+
 function home() {
-  const L = myMk(); let h = head();
+  const L = myMk();
   if (isDosen) {
-    if (!L.length) return h + empty('🧑‍🏫', 'Kamu belum membuat pelajaran', 'Buat pelajaran dulu, lalu buat kelas (A, B, C…) dan bagikan kode kelasnya ke partisipan.', btnMk);
+    if (!L.length) return head() + empty('🧑‍🏫', 'Kamu belum membuat pelajaran', 'Buat pelajaran dulu, lalu buat kelas (A, B, C…) dan bagikan kode kelasnya ke partisipan.', btnMk);
     const kls = L.reduce((a, m) => a + m.kelas.length, 0), mhs = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
     const nDinilai = ringkas(U).tiles[5][0], pfD = prefOf(U);
-    return h + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas menunggu penilaian</b><div class="quote">Buka Pelajaran, pilih kelas, lalu Pertemuan → Pengumpulan.</div></div><button class="btn lime" onclick="go('courses')">Buka pelajaran</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff')}${sc('Total kelas', kls, '🏷️', '#fff0d2')}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8')}</div><h2>Pelajaran</h2>${courseCards(L)}`;
+    const hero = head();
+    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas menunggu penilaian</b><div class="quote">Buka Pelajaran, pilih kelas, lalu Pertemuan → Pengumpulan.</div></div><button class="btn lime" onclick="go('courses')">Buka pelajaran</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#fff0d2', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
   }
-  if (!L.length) return h + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
-  const t = L.reduce((a, m) => { const s2 = stats(m, U.email); a.done += s2.done; a.todo += s2.todo; a.hadir += s2.hadir; a.held += s2.held; return a; }, { done: 0, todo: 0, hadir: 0, held: 0 });
+  if (!L.length) return head() + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
+  const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
   const pf = prefOf(U), abs = pf.ab === false ? [] : L.flatMap(m => pertOf(m, U.email).filter(x => absenOpen(x) && !P(m.id, U.email).att[x.n]).map(x => ({ m, x })));
   const todo = [];
   L.forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => { if (x.tugas && !p.sub[x.n]) todo.push([m, x, p.kembali[x.n] ? 'Dikembalikan' : 'Tugas', p.kembali[x.n] ? null : x.tugasDl]); else if (x.tugas && legacyFile(p.sub[x.n])) todo.push([m, x, 'Kirim ulang', null]); if (adaQuiz(x) && !quizDone(p, x)) todo.push([m, x, 'Quiz', x.quizDl]); }); });
-  return h + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
+  const pct = t.held ? Math.round(t.hadir / t.held * 100) : 0;
+  const hero = head();
+  const subTodo = !t.todo ? 'Semua sudah beres 🎉' : t.todoT && t.todoQ ? `${t.todoT} tugas · ${t.todoQ} quiz belum selesai` : t.todoT ? 'Belum dikirim' : 'Belum dikerjakan';
+  const subHadir = t.held ? `Hadir ${t.hadir} kali dari ${t.held} pertemuan` + (t.lewat ? ` · <b style="color:var(--red)">terlewat ${t.lewat}</b>` : '') : 'Belum ada pertemuan';
+  return hero + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
     + soonHtml(todo, pf)
-    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Total tugas selesai', t.done, '✅', '#dff5e8')}${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '')}${sc('Pertemuan tidak absen (1 semester)', `${t.hadir} <small>dari ${t.held} pertemuan</small>`, '🗓️', '#e1ebff')}</div>`
+    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')")}${sc('Total tugas selesai', t.done, '✅', '#dff5e8', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')")}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')")}</div>`
     + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
     + `<h2>Pelajaran</h2>${courseCards(L)}`;
+}
+// Detail kartu "Progres keseluruhan": daftar tugas/quiz/pertemuan per pelajaran, tiap baris bisa dibuka langsung
+function statRows(kind) {
+  const rows = [];
+  myMk().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
+    if (kind === 'todo') {
+      if (x.tugas && !p.sub[x.n]) rows.push({ m, x, chip: p.kembali[x.n] ? ['Dikembalikan', 'c-no'] : ['Tugas', 'c-iz'], dl: p.kembali[x.n] ? null : x.tugasDl });
+      if (adaQuiz(x) && !quizDone(p, x)) rows.push({ m, x, chip: ['Quiz', 'c-bl'], dl: x.quizDl });
+    } else if (kind === 'done') {
+      const nl = p.nilai[x.n];
+      if (x.tugas && p.sub[x.n]) rows.push({ m, x, chip: ['Tugas', 'c-ok'], note: nl ? (nl.skor != null ? 'Nilai ' + nl.skor : 'Sudah dinilai') : 'Menunggu penilaian' });
+      if (adaQuiz(x) && quizDone(p, x)) rows.push({ m, x, chip: ['Quiz', 'c-ok'], note: 'Selesai' });
+    } else {
+      const a = p.att[x.n];
+      rows.push({ m, x, chip: a === 'H' ? ['Hadir', 'c-ok'] : a === 'I' ? ['Izin', 'c-iz'] : a === 'A' ? ['Alpa', 'c-no'] : absenOpen(x) ? ['Absen dibuka', 'c-bl'] : x.absen && x.absen.dur > 0 ? ['Terlewat', 'c-no'] : ['Tanpa absen', 'c-wait'] });
+    }
+  }); });
+  return rows;
+}
+function statDetail(kind) {
+  const ttl = { todo: 'Tugas yang harus diselesaikan', done: 'Total tugas selesai', pert: 'Total pertemuan' }[kind];
+  const kosong = { todo: 'Semua sudah beres 🎉', done: 'Belum ada tugas atau quiz yang selesai.', pert: 'Belum ada pertemuan.' }[kind];
+  const rows = statRows(kind), by = {};
+  rows.forEach(r => (by[r.m.id] = by[r.m.id] || { m: r.m, rows: [] }).rows.push(r));
+  const hadir = rows.filter(r => r.chip[0] === 'Hadir').length, lewat = rows.filter(r => r.chip[0] === 'Terlewat').length;
+  const ringkas = kind === 'pert' ? `Hadir ${hadir} · Terlewat ${lewat} · Total ${rows.length} pertemuan` : `${rows.length} item`;
+  const body = rows.length ? Object.values(by).map(g => `<div class="sdg"><div class="sdh">${esc(g.m.nama)}<span>${g.rows.length}</span></div>${g.rows.map(r => `<button class="todo" onclick="tutupModal();bukaItem('${r.m.id}',${r.x.n})"><span class="chip ${r.chip[1]}">${r.chip[0]}</span><span>Pertemuan ${r.x.n}: ${esc(r.x.topik)}</span>${r.note ? `<span class="quote">${r.note}</span>` : ''}${dlChip(r.dl)}</button>`).join('')}</div>`).join('') : `<div class="quote" style="padding:18px 0">${kosong}</div>`;
+  modal(`<h3>${ttl}</h3><div class="quote" style="margin-bottom:12px">${ringkas}${rows.length ? ' · tekan salah satu untuk membukanya' : ''}</div>${body}`);
 }
 function bukaItem(mkId, n) { S.view = 'course'; S.cid = mkId; S.open[mkId + '-' + n] = true; render(); window.scrollTo(0, 0); }
 
@@ -1009,33 +1140,39 @@ function settings() {
 }
 
 // ---------- PANDUAN SPOTLIGHT (panduan penggunaan awal) ----------
-// Menyorot menu utama satu per satu dengan latar gelap. Muncul otomatis sekali untuk pengguna baru
-// (penanda u.pref.tour disimpan di akun) dan bisa dibuka lagi dari Pengaturan atau footer.
+// Menyorot menu utama satu per satu dengan latar gelap dan membuka halaman menunya otomatis.
+// Muncul otomatis sekali untuk pengguna baru (penanda u.pref.tour disimpan di akun) dan bisa dibuka lagi dari Pengaturan atau footer.
+// Tombol Lewati/Kembali/Lanjut berada di bilah tetap di bawah layar, jadi posisinya tidak berpindah antar langkah.
 const TOUR = { on: false, i: 0, steps: [], raf: 0, key: '', prev: null, v0: null };
+const TR_BAR = 92; // area bawah layar yang disisihkan untuk bilah tombol
 function tourSteps() {
   const nm = esc((U.nama || '').split(' ')[0] || 'kamu'), N = i => `#nav button:nth-child(${i})`, d = isDosen;
-  const merah = t => `<span style="color:#d62f2f">${t}</span>`;
-  // v = menu yang dibuka otomatis saat langkah itu tampil; t = elemen yang disorot
   return [
-    { v: 'home', h: `Selamat datang, ${nm}! 😉`, p: `Karena kamu orang baru di sini, ini adalah tutorial yang menyorot dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}.` },
+    { h: `Selamat datang, ${nm}! 😉`, p: `Karena kamu orang baru di sini, ini adalah tutorial yang menyorot dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}.` },
     { v: 'home', t: N(1), h: 'Beranda', p: d ? 'Berisi ringkasan pertemuan dalam pelajaran termasuk pengingat jumlah tugas yang belum dinilai.' : 'Lihat pengingat absen yang sedang dibuka, tugas, atau quiz yang segera berakhir serta progres belajarmu.' },
-    d ? { v: 'courses', t: N(2), h: 'Pelajaran', p: 'Di dalam menu pelajaran terdapat beberapa fitur seperti:', l: ['<b>Buat pelajaran</b> lalu di dalam pelajaran yang sudah dibuat bisa membuat kelasnya, contoh A, B, C.', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung.', 'Pelajaran dan kelas yang sudah dibuat ' + merah('bisa dihapus permanen') + ' dan progres yang ada di dalamnya tidak dapat dikembalikan lagi, maka <b>berhati-hatilah</b> dan pastikan pilihan anda sudah benar.'] }
-      : { v: 'courses', t: N(2), h: 'Pelajaran', p: 'Di dalam menu pelajaran terdapat beberapa fitur seperti:', l: ['Tekan <b>masuk kelas</b> lalu masukkan kode kelas dari pengajarmu.', '<b>Setelah bergabung</b> pelajaran akan muncul di sini lengkap dengan informasi absen, materi, tugas, dan quiz jika pengajarmu membuat pertemuan baru.'] },
-    d ? { v: 'courses', h: 'Setelah kelas berhasil dibuat', p: 'Buka kelas dan tekan info selengkapnya lalu atur pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Tambah pertemuan:</b> jika di dalam pertemuan ada materi, tugas, atau quiz maka centang opsinya dan berikan maksimal 5 file atau link.', '<b>Pengumpulan:</b> file yang sudah dikumpulkan oleh partisipan dapat dilihat langsung tanpa mengunduhnya dan pengajar bisa memberikan nilai, catatan, atau mengembalikan file yang sudah dikumpulkan partisipan jika terdapat kesalahan.', '<b>Absensi:</b> status kehadiran partisipan bisa diubah kapan saja.'] }
-      : { v: 'courses', h: 'Setelah berhasil gabung pelajaran', p: 'Buka pelajaranmu lalu pilih pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Absen:</b> tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu.', '<b>Materi:</b> lihat materi yang dibuat pengajarmu tanpa mengunduh atau bisa diunduh.', '<b>Tugas:</b> tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas, dan jika pengajar mengembalikan tugasmu perbaiki tugasnya lalu kirim ulang tugas tersebut.', '<b>Quiz:</b> quiz berupa link atau file. Jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan.', merah('Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.')] },
-    { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas.' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran.' },
-    { v: 'settings', t: N(4), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja.' },
-    { v: 'settings', t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu.' },
-    { v: 'settings', t: '.foot .fgrid > div:last-child', h: 'Butuh bantuan?', p: `Hubungi kami lewat Email atau WhatsApp di sini jika ada kendala atau saran. Selamat ${d ? 'mengajar' : 'belajar'} ✨` }
+    { v: 'courses', t: N(2), h: 'Pelajaran', p: 'Di dalam menu pelajaran terdapat beberapa fitur seperti:', l: d
+      ? ['<b>Buat pelajaran</b> lalu di dalam pelajaran yang sudah dibuat bisa membuat kelasnya, contoh A, B, C', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung', 'Pelajaran dan kelas yang sudah dibuat bisa dihapus permanen dan progres yang ada di dalamnya tidak dapat dikembalikan lagi, <b>maka berhati-hatilah</b> dan pastikan pilihan Anda sudah benar']
+      : ['Tekan masuk kelas lalu masukkan kode kelas dari pengajarmu', 'Setelah bergabung pelajaran akan muncul di sini lengkap dengan absen, materi, tugas, dan quiz jika pengajarmu membuat pertemuan baru'] },
+    d ? { v: 'courses', h: 'Setelah kelas berhasil dibuat', p: 'Buka kelas dan tekan info selengkapnya lalu atur pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Tambah pertemuan</b>: jika di dalam pertemuan ada materi, tugas, atau quiz maka centang opsinya dan berikan maksimal 5 file atau link', '<b>Pengumpulan</b>: file yang sudah dikumpulkan oleh partisipan dapat dilihat langsung tanpa mengunduhnya dan pengajar bisa memberikan nilai, catatan, atau mengembalikan file yang sudah dikumpulkan partisipan jika terdapat kesalahan', '<b>Absensi</b>: status kehadiran partisipan bisa diubah kapan saja'] }
+      : { v: 'courses', h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen</b>: tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu', '<b>Materi</b>: lihat materi yang dibuat dosenmu tanpa mengunduh atau bisa diunduh', '<b>Tugas</b>: tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas dan jika dosen mengembalikan tugasmu perbaiki tugasnya dan kirim ulang tugas tersebut', '<b>Quiz</b>: quiz berupa link atau file, jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan', '<span class="tr-red">Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.</span>'] },
+    { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran' },
+    { v: 'settings', t: N(4), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja' },
+    { t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu' },
+    { t: '.foot .fcontact', sc: 'center', h: 'Butuh bantuan?', p: `Hubungi kami lewat Email atau WhatsApp di sini jika ada kendala atau saran. Selamat ${d ? 'mengajar' : 'belajar'} ✨` }
   ];
 }
 function startTour() {
   if (PAGE !== 'beranda' || !U || TOUR.on) return;
   tutupModal();
   TOUR.on = true; TOUR.steps = tourSteps(); TOUR.prev = document.activeElement; TOUR.v0 = S.view;
+  // ruang kosong di bawah halaman supaya footer bisa digulir ke atas bilah tombol
+  const pad = document.createElement('div'); pad.id = 'trPad'; pad.style.cssText = 'height:130px;background:#0c2a1f';
+  document.body.appendChild(pad);
   const r = document.createElement('div');
-  r.id = 'tour'; r.className = 'tr nohole';
-  r.innerHTML = '<div class="tr-dim"></div><div class="tr-hole"></div><div class="tr-tip" id="trTip" role="dialog" aria-modal="true" aria-labelledby="trH" tabindex="-1"></div>';
+  r.id = 'tour'; r.className = 'tr nohole'; r.setAttribute('role', 'dialog'); r.setAttribute('aria-modal', 'true'); r.setAttribute('aria-labelledby', 'trH');
+  r.innerHTML = '<div class="tr-dim"></div><div class="tr-hole"></div><div class="tr-tip" id="trTip" tabindex="-1"></div>'
+    + '<div class="tr-bar" id="trBar"><button class="tr-skip" id="trSkip" onclick="endTour()">Lewati</button><div class="tr-dots" id="trDots" aria-hidden="true"></div>'
+    + '<button class="btn ghost" id="trPrev" onclick="tourGo(-1)">Kembali</button><button class="btn lime" id="trNext" onclick="tourGo(1)">Mulai</button></div>';
   document.body.appendChild(r);
   document.addEventListener('keydown', tourKey, true);
   tourShow(0);
@@ -1045,15 +1182,16 @@ function startTour() {
 function tourShow(i) {
   const s = TOUR.steps[i], n = TOUR.steps.length, last = i === n - 1, tip = $('#trTip');
   TOUR.i = i; TOUR.key = '';
-  // buka menu yang sedang dijelaskan secara otomatis
-  if (s.v && S.view !== s.v) { S.view = s.v; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
+  if (s.v && S.view !== s.v) go(s.v);   // buka halaman menu yang sedang dijelaskan
   tip.classList.toggle('mid', !s.t);
-  tip.innerHTML = `<div class="tr-top"><span class="tr-n">Langkah ${i + 1} dari ${n}</span>${last ? '' : '<button class="tr-skip" onclick="endTour()">Lewati</button>'}</div>
-    <h3 id="trH">${s.h}</h3><p>${s.p}</p>${s.l ? '<ul>' + s.l.map(x => `<li>${x}</li>`).join('') + '</ul>' : ''}
-    <div class="tr-foot"><div class="tr-dots" aria-hidden="true">${TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div><button class="btn ghost tr-b" onclick="tourGo(-1)"${i ? '' : ' tabindex="-1" aria-hidden="true" style="visibility:hidden"'}>Kembali</button><button class="btn lime tr-b" id="trNext" onclick="tourGo(1)">${last ? 'Selesai' : i ? 'Lanjut' : 'Mulai'}</button></div>`;
+  tip.innerHTML = `<div class="tr-n">Langkah ${i + 1} dari ${n}</div><h3 id="trH">${s.h}</h3><p>${s.p}</p>${s.l ? '<ul>' + s.l.map(x => `<li>${x}</li>`).join('') + '</ul>' : ''}`;
+  $('#trDots').innerHTML = TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
+  $('#trPrev').style.visibility = i ? 'visible' : 'hidden';
+  $('#trSkip').style.visibility = last ? 'hidden' : 'visible';
+  $('#trNext').textContent = last ? 'Selesai' : i ? 'Lanjut' : 'Mulai';
   tip.scrollTop = 0;
   const el = s.t && document.querySelector(s.t);
-  if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  if (el) el.scrollIntoView({ block: s.sc || 'nearest', inline: 'nearest', behavior: 'smooth' });
   $('#trNext').focus({ preventScroll: true });
 }
 function tourGo(d) { const j = TOUR.i + d; if (j >= TOUR.steps.length) return endTour(); if (j >= 0) tourShow(j); }
@@ -1062,7 +1200,7 @@ function tourPlace() {
   const root = $('#tour'), tip = $('#trTip'); if (!root || !tip) return;
   const s = TOUR.steps[TOUR.i], hole = root.querySelector('.tr-hole');
   const el = s.t ? document.querySelector(s.t) : null, r = el ? el.getBoundingClientRect() : null, ok = !!r && r.width > 0 && r.height > 0;
-  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight, tw = tip.offsetWidth, th = tip.offsetHeight;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight - TR_BAR, tw = tip.offsetWidth, th = tip.offsetHeight;
   const key = [ok ? [r.left, r.top, r.width, r.height].map(Math.round).join(',') : '-', vw, vh, tw, th, TOUR.i].join('|');
   if (key === TOUR.key) return;
   TOUR.key = key;
@@ -1080,7 +1218,7 @@ function tourPlace() {
     const k = (vw <= 820 ? ['bottom', 'top', 'right', 'left'] : ['right', 'bottom', 'top', 'left']).find(q => o[q][2]);
     [x, y] = k ? o[k] : [cx - tw / 2, vh - th - m];
   } else {
-    hole.style.cssText = `left:${vw / 2}px;top:${vh / 2}px;width:0;height:0`;
+    hole.style.cssText = `left:${vw / 2}px;top:${(vh + TR_BAR) / 2}px;width:0;height:0`;
     x = (vw - tw) / 2; y = (vh - th) / 2;
   }
   tip.style.left = Math.max(m, Math.min(x, vw - tw - m)) + 'px';
@@ -1093,7 +1231,7 @@ function tourKey(e) {
   else if (e.key === 'ArrowRight') { e.preventDefault(); tourGo(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); tourGo(-1); }
   else if (e.key === 'Tab') {
-    const f = [...$('#trTip').querySelectorAll('button')], n = f.length; if (!n) return;
+    const f = [...$('#trBar').querySelectorAll('button')].filter(b => b.style.visibility !== 'hidden'), n = f.length; if (!n) return;
     e.preventDefault();
     const i = f.indexOf(document.activeElement);
     f[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + n) % n].focus();
@@ -1104,8 +1242,10 @@ function endTour() {
   TOUR.on = false; cancelAnimationFrame(TOUR.raf);
   document.removeEventListener('keydown', tourKey, true);
   const r = $('#tour'); if (r) r.remove();
-  if (TOUR.v0 && S.view !== TOUR.v0) { S.view = TOUR.v0; S.edit = null; S.pfKey = null; render(); }
+  const pad = $('#trPad'); if (pad) pad.remove();
   if (U && !prefOf(U).tour) { U.pref = { ...prefOf(U), tour: true }; Auth.update(U.email, { pref: U.pref }); }
+  const v0 = TOUR.v0; TOUR.v0 = null;
+  if (['home', 'courses', 'progress', 'settings'].includes(v0) && S.view !== v0) go(v0);   // kembali ke halaman semula
   window.scrollTo(0, 0);
   const pv = TOUR.prev; TOUR.prev = null;
   if (pv && pv !== document.body && document.contains(pv) && pv.focus) pv.focus({ preventScroll: true });
@@ -1126,6 +1266,7 @@ function render() {
   renderNav();
   const v = S.view;
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
+  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx();
 }
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
