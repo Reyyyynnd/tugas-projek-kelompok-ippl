@@ -165,7 +165,7 @@ function setMe(u) {
   const g = id => document.getElementById(id);
   g('meAv').textContent = (u.nama || '?').charAt(0).toUpperCase();
   g('meName').textContent = u.nama;
-  g('meSub').innerHTML = `<span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span><span class="idtxt">ID ${esc(u.id)}</span>`;
+  g('meSub').innerHTML = `<span class="idtxt">ID ${esc(u.id)}</span><span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span>`;
   initTop(u);
 }
 const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
