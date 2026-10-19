@@ -181,7 +181,9 @@ function footerHtml() {
 const $=s=>document.querySelector(s);
 
 /* ===== HALAMAN BERANDA, MATA KULIAH, PROGRES (pengajar & partisipan) ===== */
-const TOTAL = 16;
+const TOTAL = 16, MAXP = 50;   // TOTAL = jumlah pertemuan bawaan; tiap kelas bisa punya jumlah sendiri (k.total), maksimal MAXP
+const totalOf = k => Math.min(MAXP, Math.max(1, Math.floor(+(k && k.total)) || TOTAL));
+const cekTotal = v => { const t = Number(v); return Number.isInteger(t) && t >= 1 && t <= MAXP ? t : 0; };
 let U = null, isDosen = false;   // diisi setelah data dari Supabase dimuat (lihat bagian paling bawah)
 // view: home | courses | course (satu pelajaran) | kelas (satu kelas) | pert (pertemuan kelas) | progress | settings
 const S = { view: 'home', cid: null, kid: null, open: {}, edit: null, draft: {}, pf: null, pfKey: null };   // draft = lampiran tugas yang belum dikirim
@@ -343,9 +345,9 @@ const cd = x => `<span data-exp="${absenExp(x)}">${fmt(absenExp(x) - Date.now())
 
 function courseCards(L) {
   return `<div class="courses pcs" id="pcs">${L.map((m, idx) => {
-    const d = dec(m); let sub, foot, held, pill = '', pop = '', tip = '';
+    const d = dec(m); let sub, foot, held, tot = TOTAL, pill = '', pop = '', tip = '';
     if (isDosen) {
-      held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; sub = `${studentsOf(m.id).length} partisipan`;
+      held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; tot = m.kelas.length ? m.kelas.reduce((a, k) => a + totalOf(k), 0) / m.kelas.length : TOTAL; sub = `${studentsOf(m.id).length} partisipan`;
       pill = `<span class="pc-pill">${m.kelas.length} kelas</span>`;
       foot = `<span>Pertemuan berjalan ${totalPert(m)}</span><span>${m.kelas.length ? 'Buka pelajaran →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
       // Saat kartu di-hover: daftar kelas yang bisa langsung dibuka (popover di luar kartu, lihat initPcTip)
@@ -353,15 +355,15 @@ function courseCards(L) {
         ? m.kelas.map(k => `<button type="button" class="kchip" onclick="event.stopPropagation();bukaKelasDari('${m.id}','${k.id}')"><i>${esc(k.nama.trim().slice(-1).toUpperCase())}</i><span><b>${esc(k.nama)}</b><small>${studentsOf(m.id, k.id).length} partisipan · ${esc(k.kode)}</small></span><em>→</em></button>`).join('')
         : '<div class="hv-row muted">Belum ada kelas. Klik pelajaran ini untuk membuatnya.</div>'}</div><div class="hv-foot"><span></span><span>Klik pelajaran untuk semua kelas ›</span></div></div>`;
     } else {
-      const s2 = stats(m, U.email), p = P(m.id, U.email); held = s2.held; sub = esc(m.dosenNama);
+      const s2 = stats(m, U.email), p = P(m.id, U.email); held = s2.held; tot = totalOf(kelasOf(m, U.email)); sub = esc(m.dosenNama);
       const mw = [s2.todoT && `${s2.todoT} tugas`, s2.todoQ && `${s2.todoQ} quiz`].filter(Boolean).join(' & ');
-      foot = `<span>Pertemuan ${s2.held}/${TOTAL}</span><span>${mw ? `<b style="color:var(--red)">${mw} menunggu</b>` : 'Tugas beres'}</span>`;
+      foot = `<span>Pertemuan ${s2.held}/${totalOf(kelasOf(m, U.email))}</span><span>${mw ? `<b style="color:var(--red)">${mw} menunggu</b>` : 'Tugas beres'}</span>`;
       if (pertOf(m, U.email).some(x => absenOpen(x) && !p.att[x.n])) pill = '<span class="pc-pill live">🔔 Absen dibuka</span>';
       // Saat kartu di-hover: ringkasan total pertemuan dan tugas selesai (popover di luar kartu, lihat initPcTip)
       const lw = s2.lewat ? ` · <b class="neg">terlewat ${s2.lewat}</b>` : '';
       tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">${d.ic}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
     }
-    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${d.ic}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${held / TOTAL * 100}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
+    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${d.ic}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
   }).join('')}</div>`;
 }
 // ===== Popover hover di luar kartu =====
@@ -667,7 +669,7 @@ function courseM(m) {
   const s2 = stats(m, U.email), p = P(m.id, U.email), pt = pertOf(m, U.email), pct = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
   return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, hl('Pengajar', esc(m.dosenNama)) + (m.jadwal ? ' <span class="hdot">·</span> ' + hl('Jadwal', esc(cap1(m.jadwal))) : ''))}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost dng" onclick="keluarModal('${m.id}')">🚪 Keluar dari pelajaran</button></div>
-  <div class="grid4">${kp('Kehadiran', `${s2.hadir}<small>/${s2.held}</small>`, pct + '% hadir')}${kp('Total pertemuan', `${s2.held}<small>/${TOTAL}</small>`)}${kp('Tugas selesai', `${s2.done}<small>/${s2.tasks}</small>`)}${kp('Perlu dikerjakan', `<span style="color:${s2.todo ? 'var(--red)' : 'inherit'}">${s2.todo}</span>`)}</div>
+  <div class="grid4">${kp('Kehadiran', `${s2.hadir}<small>/${s2.held}</small>`, pct + '% hadir')}${kp('Total pertemuan', `${s2.held}<small>/${totalOf(kelasOf(m, U.email))}</small>`)}${kp('Tugas selesai', `${s2.done}<small>/${s2.tasks}</small>`)}${kp('Perlu dikerjakan', `<span style="color:${s2.todo ? 'var(--red)' : 'inherit'}">${s2.todo}</span>`)}</div>
   <h2>Daftar pertemuan</h2>${pt.length ? pt.map(x => meetingM(m, x, p)).join('') : '<p class="empty">Pengajar belum membuka pertemuan.</p>'}`;
 }
 function meetingM(m, x, p) {
@@ -843,15 +845,16 @@ function grade(mkId, n) {
 function courseD(m) {
   const cards = m.kelas.map(k => {
     const n = studentsOf(m.id, k.id).length;
-    return `<button class="course" onclick="bukaKelas('${k.id}')"><div class="hd"><div class="ic" style="background:var(--limeS);font-weight:800">${esc(k.nama.trim().slice(-1).toUpperCase())}</div><div><b>${esc(k.nama)}</b><span class="s">${n} partisipan</span></div><span class="code-pill" style="margin-left:auto">${esc(k.kode)}</span></div><div class="bar"><i style="width:${k.pert.length / TOTAL * 100}%"></i></div><div class="meta"><span>Pertemuan ${k.pert.length}/${TOTAL}</span><span>Buka kelas →</span></div></button>`;
+    return `<button class="course" onclick="bukaKelas('${k.id}')"><div class="hd"><div class="ic" style="background:var(--limeS);font-weight:800">${esc(k.nama.trim().slice(-1).toUpperCase())}</div><div><b>${esc(k.nama)}</b><span class="s">${n} partisipan</span></div><span class="code-pill" style="margin-left:auto">${esc(k.kode)}</span></div><div class="bar"><i style="width:${Math.min(100, k.pert.length / totalOf(k) * 100)}%"></i></div><div class="meta"><span>Pertemuan ${k.pert.length}/${totalOf(k)}</span><span>Buka kelas →</span></div></button>`;
   }).join('');
   return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, m.jadwal ? hl('Jadwal', esc(cap1(m.jadwal))) : 'Pelajaran saya')}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="mkModal('${m.id}')">✏️ Ubah pelajaran</button><button class="btn ghost dng" onclick="hapusMkModal('${m.id}')">🗑 Hapus pelajaran</button></div>
   <div class="grid3">${kp('Kelas', m.kelas.length)}${kp('Partisipan bergabung', studentsOf(m.id).length)}${kp('Pertemuan berjalan', totalPert(m), 'total dari semua kelas')}</div>
   <h2>Kelas</h2>${cards ? `<div class="courses">${cards}</div>` : '<p class="empty">Belum ada kelas. Buat kelas pertama di bawah.</p>'}
-  <div class="card" style="margin-top:16px"><b>Buat kelas baru</b><p class="quote">Contoh: nama "Kelas A", kode "PBO-A". Kode inilah yang diberikan ke partisipan.</p>
+  <div class="card" style="margin-top:16px"><b>Buat kelas baru</b><p class="quote">Contoh: nama "Kelas A", kode "PBO-A". Kode inilah yang diberikan ke partisipan. Jumlah pertemuan ditentukan olehmu (1–${MAXP}).</p>
   <div class="two" style="margin-top:10px"><label class="f">Nama kelas<input id="kNama" placeholder="Kelas A" maxlength="30"></label>
   <label class="f">Kode kelas<span class="row" style="flex-wrap:nowrap"><input id="kKode" placeholder="PBO-A" maxlength="16" style="text-transform:uppercase"><button type="button" class="btn ghost" onclick="acak('${m.id}')">Acak</button></span></label></div>
+  <label class="f" style="margin-top:10px;max-width:260px">Jumlah pertemuan<input id="kTotal" type="number" min="1" max="${MAXP}" step="1" value="${TOTAL}" inputmode="numeric"></label>
   <p class="err" id="kErr" role="alert"></p><button class="btn lime" style="margin-top:8px" onclick="addKelas('${m.id}')">Tambah kelas</button></div>`;
 }
 function bukaKelas(kid) { S.view = 'kelas'; S.kid = kid; S.edit = null; S.pfKey = null; S.delMode = false; render(); window.scrollTo(0, 0); }
@@ -872,10 +875,12 @@ async function addKelas(mkId) {
   const nama = $('#kNama').value.trim(), kode = $('#kKode').value.trim().toUpperCase(), e = $('#kErr');
   if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
   if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
+  const total = cekTotal($('#kTotal').value);
+  if (!total) { e.textContent = 'Jumlah pertemuan harus bilangan bulat 1–' + MAXP + '.'; return; }
   if (await kodeDipakai(kode, null, e)) return;
-  const m = getMk(mkId); m.kelas.push({ id: uid('k'), nama, kode, pert: [] });
+  const m = getMk(mkId); m.kelas.push({ id: uid('k'), nama, kode, total, pert: [] });
   if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
-  render(); toast('Kelas dibuat. Kode: ' + kode);
+  render(); toast('Kelas dibuat (' + total + ' pertemuan). Kode: ' + kode);
 }
 function salin(kode) {
   try { navigator.clipboard.writeText(kode).then(() => toast('Kode disalin: ' + kode), () => toast('Kode kelas: ' + kode)); } catch (e) { toast('Kode kelas: ' + kode); }
@@ -934,7 +939,7 @@ function kelasPage() {
   return `<button class="back" onclick="go('course','${m.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(m.nama)}</button>${hdr(m, hl('Kelas', esc(k.nama)))}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="kelasModal()">✏️ Ubah kelas</button><button class="btn ghost dng" onclick="hapusKelasModal()">🗑 Hapus kelas</button></div>
   <div class="grid3"><div class="card kp"><div class="l">Kode kelas</div><div style="margin:8px 0"><span class="code-pill big">${esc(k.kode)}</span></div><button class="btn ghost" onclick="salin('${esc(k.kode)}')">Salin kode</button></div>
-  ${kp('Partisipan bergabung', ss.length)}${kp('Pertemuan berjalan', `${k.pert.length}<small>/${TOTAL}</small>`)}</div>
+  ${kp('Partisipan bergabung', ss.length)}${kp('Pertemuan berjalan', `${k.pert.length}<small>/${totalOf(k)}</small>`)}</div>
   <div class="row" style="margin-top:18px"><button class="btn lime" onclick="bukaPert()">Info selengkapnya →</button><span class="quote">Atur materi, tugas, quiz, dan absensi untuk ${esc(k.nama)}.</span></div>
   <h2>Partisipan (${ss.length})</h2>${ss.length ? ss.map((u, i) => partisipanCard(m, k, u, i)).join('') : '<div class="card"><span class="empty">Belum ada partisipan yang bergabung. Bagikan kode kelas di atas.</span></div>'}`;
 }
@@ -1147,13 +1152,16 @@ function absenTab(m, k, ss) {
 function pertPage() {
   const c = ctxKelas(); if (!c) { S.view = 'courses'; return coursesPage(); }
   const { m, k } = c, ss = studentsOf(m.id, k.id), e = S.edit ? k.pert.find(x => x.n === S.edit) : null, dm = !!S.delMode && !e;
+  if (!dm) { S.selMode = false; S.delSel = []; }
+  S.delSel = (S.delSel || []).filter(n => k.pert.some(x => x.n === n));
+  const sm = dm && !!S.selMode;
   const list = k.pert.map((x, idx) => {
     const ab = x.absen && x.absen.dur > 0 ? (absenOpen(x) ? `Absen dibuka · sisa ${cd(x)}` : `Absen mandiri ditutup (${x.absen.dur} mnt)`) : 'Tanpa absen mandiri';
     const kt = x.tugas ? `Tugas ${ss.filter(u => P(m.id, u.email).sub[x.n]).length}/${ss.length} terkumpul` : '', kq = adaQuiz(x) ? `Quiz ${ss.filter(u => quizDone(P(m.id, u.email), x)).length}/${ss.length} selesai` : '';
-    return `<div class="mt"><div class="prow">${dm ? `<button class="delx" style="--i:${idx}" onclick="hapusPertModal(${x.n})" aria-label="Hapus pertemuan ${x.n}" title="Hapus pertemuan ${x.n}">✕</button>` : ''}<div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${[ab, matOf(x).length ? 'Materi ' + matOf(x).length : '', kt, kq].filter(Boolean).join(' · ')}</small></div><button class="btn ghost" onclick="editPert(${x.n})">Edit</button></div></div>`;
+    return `<div class="mt${sm && S.delSel.includes(x.n) ? ' picked' : ''}"><div class="prow">${dm ? `<button type="button" class="delx${sm ? ' sel' : ''}${sm && S.delSel.includes(x.n) ? ' on' : ''}" data-n="${x.n}" style="--i:${idx}" onclick="delxTap(${x.n})" aria-label="${sm ? 'Pilih' : 'Hapus'} pertemuan ${x.n}" title="${sm ? 'Pilih' : 'Hapus'} pertemuan ${x.n}"><i class="dx" aria-hidden="true">✕</i><svg class="dk" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>` : ''}<div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${[ab, matOf(x).length ? 'Materi ' + matOf(x).length : '', kt, kq].filter(Boolean).join(' · ')}</small></div><button class="btn ghost" onclick="editPert(${x.n})">Edit</button></div></div>`;
   }).join('') || '<p class="empty">Belum ada pertemuan. Tambahkan pertemuan pertama di bawah.</p>';
   // Tombol hapus ikut di dalam kotak daftar pertemuan: "Hapus pertemuan sebelumnya" -> muncul ✕ di tiap nomor + tombol "Batal"
-  const foot = k.pert.length && !e ? `<div class="pfoot">${dm ? '<button class="btn ghost" onclick="modeHapus(false)">Batal</button><span class="quote" style="margin:0">Tekan ✕ di samping nomor pertemuan yang ingin dihapus.</span>' : '<button class="btn red" onclick="modeHapus(true)">Hapus pertemuan sebelumnya</button>'}</div>` : '';
+  const foot = k.pert.length && !e ? `<div class="pfoot">${pfootInner(dm, sm, S.delSel.length)}</div>` : '';
   const box = `<div class="card plist${dm ? ' dm' : ''}">${list}${foot}</div>`;
   const tab = S.pTab || 'pertemuan';
   const nBelum = kumpulItems(m, k, ss).filter(i => i.gr && !i.nl).length;
@@ -1162,7 +1170,7 @@ function pertPage() {
   if (tab === 'pengumpulan') return top + kumpulTab(m, k, ss);
   if (tab === 'absensi') return top + absenTab(m, k, ss);
   const head2 = top + '<h2>Daftar pertemuan</h2>';
-  if (!e && k.pert.length >= TOTAL) return head2 + box + '<p class="empty" style="margin-top:14px">Semua 16 pertemuan kelas ini sudah dibuat.</p>';
+  if (!e && k.pert.length >= totalOf(k)) return head2 + box + `<div class="warnbox" style="margin-top:14px;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;font-size:14.5px"><div style="flex:1 1 260px"><b style="font-size:16px">📌 Semua ${totalOf(k)} pertemuan kelas ini sudah dibuat</b><div style="margin-top:3px">Perlu menambah pertemuan? Naikkan jumlah pertemuan lewat tombol <b>Ubah kelas</b>.</div></div><button type="button" class="btn lime" onclick="kelasModal()">✏️ Ubah kelas</button></div>`;
   pfInit(k, e);
   const v = e || { topik: '', tugas: '', quiz: [], tugasDl: null, quizDl: null }, dur = e ? (e.absen ? e.absen.dur : 0) : 5;
   const adaQ = e ? adaQuiz(e) : false, tg = box2 => `onchange="document.getElementById('${box2}').hidden=!this.checked"`;
@@ -1239,7 +1247,79 @@ async function savePert0() {
   const msg = old ? 'Pertemuan ' + old.n + ' diperbarui' : 'Pertemuan ' + k.pert.length + ' ditambahkan';
   S.edit = null; S.pfKey = null; S.pf = null; render(); toast(msg);
 }
-function modeHapus(on) { S.delMode = !!on; render(); }
+function modeHapus(on) { S.delMode = !!on; S.selMode = false; S.delSel = []; render(); }
+// Isi footer daftar pertemuan: (1) Hapus pertemuan sebelumnya -> (2) Pilih + Batal -> (3) Hapus (n) + Batal
+function pfootInner(dm, sm, n) {
+  if (!dm) return '<button class="btn red" onclick="modeHapus(true)">Hapus pertemuan sebelumnya</button>';
+  if (!sm) return '<button class="btn lime" onclick="modePilih()">Pilih</button><button class="btn ghost" onclick="modeHapus(false)">Batal</button><span class="quote" style="margin:0">Tekan ✕ untuk menghapus satu pertemuan, atau tekan Pilih untuk memilih banyak.</span>';
+  return `<button class="btn red" id="btnHapusSel" onclick="hapusBanyakModal()" ${n ? '' : 'disabled'}>Hapus${n ? ' (' + n + ')' : ''}</button><button class="btn ghost" onclick="modeHapus(false)">Batal</button><button class="btn ghost" id="btnPilihSemua" onclick="pilihSemua()">${selTotal() && n >= selTotal() ? 'Batal pilih semua' : 'Pilih semua'}</button><span class="quote" style="margin:0" id="selInfo">${n ? n + ' pertemuan dipilih.' : 'Tekan kotak di samping nomor untuk memilih.'}</span>`;
+}
+function modePilih() {
+  S.selMode = true; S.delSel = [];
+  const box = document.querySelector('.plist'); if (!box) { render(); return; }
+  // tanpa render ulang supaya ✕ berubah mulus menjadi kotak ceklis
+  const f = box.querySelector('.pfoot'); if (f) f.innerHTML = pfootInner(true, true, 0);
+  box.querySelectorAll('.delx').forEach((b, i) => {
+    b.style.setProperty('--i', i); b.classList.add('sel');
+    b.setAttribute('aria-label', 'Pilih pertemuan ' + b.dataset.n); b.title = 'Pilih pertemuan ' + b.dataset.n;
+  });
+}
+function delxTap(n) { if (S.selMode) togglePilih(n); else hapusPertModal(n); }
+function selTotal() { const c = ctxKelas(); return c ? c.k.pert.length : 0; }
+function selUI() {
+  const s = S.delSel || [], tot = selTotal();
+  document.querySelectorAll('.plist .delx').forEach(b => {
+    const on = s.includes(+b.dataset.n); b.classList.toggle('on', on);
+    const r = b.closest('.mt'); if (r) r.classList.toggle('picked', on);
+  });
+  const h = document.getElementById('btnHapusSel'); if (h) { h.disabled = !s.length; h.textContent = 'Hapus' + (s.length ? ' (' + s.length + ')' : ''); }
+  const t = document.getElementById('selInfo'); if (t) t.textContent = s.length ? s.length + ' pertemuan dipilih.' : 'Tekan kotak di samping nomor untuk memilih.';
+  const p = document.getElementById('btnPilihSemua'); if (p) p.textContent = tot && s.length >= tot ? 'Batal pilih semua' : 'Pilih semua';
+}
+function togglePilih(n) {
+  const s = S.delSel || (S.delSel = []), i = s.indexOf(n);
+  if (i >= 0) s.splice(i, 1); else s.push(n);
+  selUI();
+}
+function pilihSemua() {
+  const c = ctxKelas(); if (!c) return; const all = c.k.pert.map(x => x.n);
+  S.delSel = (S.delSel || []).length >= all.length ? [] : all.slice();
+  selUI();
+}
+function hapusBanyakModal() {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, sel = (S.delSel || []).slice().sort((a, b) => a - b);
+  if (!sel.length) return;
+  if (sel.length === 1) { hapusPertModal(sel[0]); return; }
+  const jml = studentsOf(m.id, k.id).length, sisa = k.pert.length - sel.length;
+  modal(`<h3>⚠️ Hapus ${sel.length} pertemuan?</h3><div class="quote">${esc(k.nama)}</div><div class="warnbox" ${merah}>Tindakan ini <b>tidak bisa dibatalkan</b>.</div>
+  <ul class="dampak">${sel.map(n => `<li><b>Pertemuan ${n}</b> · ${esc((k.pert.find(q => q.n === n) || {}).topik || '')}</li>`).join('')}
+  <li>Materi, tugas, dan quiz di pertemuan tersebut ikut terhapus.</li>
+  <li>Absen, tugas yang dikirim, nilai, dan hasil quiz <b>${jml} partisipan</b> di pertemuan tersebut ikut terhapus.</li>
+  ${sisa ? `<li>Pertemuan yang tersisa (${sisa}) otomatis diurutkan ulang nomornya.</li>` : ''}</ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusBanyak()">Ya, hapus ${sel.length} pertemuan</button></div>`);
+}
+function hapusBanyak() {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c;
+  const sel = (S.delSel || []).filter(n => k.pert.some(x => x.n === n)).sort((a, b) => b - a); // dari nomor terbesar agar penomoran tidak bergeser
+  if (!sel.length) { tutupModal(); return; }
+  const a = st.pr(); sel.forEach(n => hapusPertCore(m, k, a, n));
+  saveMk(m); st.setPr(a);
+  Object.keys(S.open).forEach(key => { if (key.startsWith(m.id + '-')) delete S.open[key]; });
+  S.delMode = false; S.selMode = false; S.delSel = []; S.edit = null; S.pfKey = null; tutupModal(); render(); toast(sel.length + ' pertemuan dihapus');
+}
+// Hapus satu pertemuan di memori (tanpa simpan/render): geser nomor pertemuan & data partisipan sesudahnya
+function hapusPertCore(m, k, a, n) {
+  k.pert = k.pert.filter(x => x.n !== n); k.pert.forEach(x => { if (x.n > n) x.n--; });
+  const d = a[m.id] || {};
+  studentsOf(m.id, k.id).forEach(u => {
+    const v = d[u.email]; if (!v) return;
+    ['att', 'sub', 'quiz', 'qt', 'nilai', 'qext', 'kembali'].forEach(f => {
+      const o = v[f]; if (!o) return; const nw = {};
+      Object.keys(o).forEach(key => { const i = +key; if (i < n) nw[key] = o[key]; else if (i > n) nw[i - 1] = o[key]; });
+      v[f] = nw;
+    });
+  });
+}
 function hapusPertModal(n) {
   const c = ctxKelas(); if (!c) return; const { m, k } = c, x = k.pert.find(q => q.n === n); if (!x) return;
   const jml = studentsOf(m.id, k.id).length, sesudah = k.pert.filter(q => q.n > n).length;
@@ -1252,21 +1332,10 @@ function hapusPertModal(n) {
 function hapusPert(n) {
   const c = ctxKelas(); if (!c) return; const { m, k } = c;
   if (!k.pert.some(x => x.n === n)) { tutupModal(); return; }
-  k.pert = k.pert.filter(x => x.n !== n); k.pert.forEach(x => { if (x.n > n) x.n--; });
-  saveMk(m);
-  // data partisipan per nomor pertemuan: hapus nomor ini, geser nomor sesudahnya
-  const a = st.pr(), d = a[m.id] || {};
-  studentsOf(m.id, k.id).forEach(u => {
-    const v = d[u.email]; if (!v) return;
-    ['att', 'sub', 'quiz', 'qt', 'nilai', 'qext', 'kembali'].forEach(f => {
-      const o = v[f]; if (!o) return; const nw = {};
-      Object.keys(o).forEach(key => { const i = +key; if (i < n) nw[key] = o[key]; else if (i > n) nw[i - 1] = o[key]; });
-      v[f] = nw;
-    });
-  });
-  st.setPr(a);
+  const a = st.pr(); hapusPertCore(m, k, a, n);
+  saveMk(m); st.setPr(a);
   Object.keys(S.open).forEach(key => { if (key.startsWith(m.id + '-')) delete S.open[key]; });
-  S.delMode = false; S.edit = null; S.pfKey = null; tutupModal(); render(); toast('Pertemuan ' + n + ' dihapus');
+  S.delMode = false; S.selMode = false; S.delSel = []; S.edit = null; S.pfKey = null; tutupModal(); render(); toast('Pertemuan ' + n + ' dihapus');
 }
 // Pengumpulan: siapa saja yang sudah mengirim tugas / mengerjakan quiz
 let KUM = [], PVJ = 0, KFOC = null;
@@ -1450,6 +1519,7 @@ function kelasModal() {
   modal(`<h3>Ubah kelas</h3><div class="quote">Partisipan yang sudah bergabung tetap berada di kelas ini. Kode baru hanya berlaku untuk yang bergabung berikutnya.</div>
   <div class="fg" style="margin-top:12px"><label class="f">Nama kelas<input id="eKNama" value="${esc(k.nama)}" maxlength="30"></label>
   <label class="f">Kode kelas<input id="eKKode" value="${esc(k.kode)}" maxlength="16" style="text-transform:uppercase"></label>
+  <label class="f">Jumlah pertemuan<input id="eKTotal" type="number" min="${Math.max(1, k.pert.length)}" max="${MAXP}" step="1" value="${totalOf(k)}" inputmode="numeric"><small class="quote">Sudah dibuat ${k.pert.length} pertemuan, jadi jumlahnya tidak bisa kurang dari itu.</small></label>
   <p class="err" id="eKErr" role="alert"></p>
   <div class="row"><button class="btn lime" onclick="simpanKelas()">Simpan perubahan</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
 }
@@ -1458,8 +1528,11 @@ async function simpanKelas() {
   const nama = $('#eKNama').value.trim(), kode = $('#eKKode').value.trim().toUpperCase();
   if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
   if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
+  const total = cekTotal($('#eKTotal').value);
+  if (!total) { e.textContent = 'Jumlah pertemuan harus bilangan bulat 1–' + MAXP + '.'; return; }
+  if (total < k.pert.length) { e.textContent = 'Kelas ini sudah punya ' + k.pert.length + ' pertemuan. Hapus pertemuan dulu jika ingin menguranginya.'; return; }
   if (await kodeDipakai(kode, k.id, e)) return;
-  k.nama = nama; k.kode = kode;
+  k.nama = nama; k.kode = kode; k.total = total;
   if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   tutupModal(); toast('Kelas diperbarui'); render();
 }

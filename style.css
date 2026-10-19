@@ -778,3 +778,18 @@ input[type=file][hidden]{display:none!important}
 /* menu "Tambah lampiran" tidak boleh terpotong oleh kartu pertemuan */
 .mt:has(.addmenu){overflow:visible}
 .kmp-chips{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:flex-end}.kmp-pair{display:inline-flex;align-items:center;gap:4px}
+
+/* ===== Mode pilih banyak: ✕ berubah menjadi kotak ceklis ===== */
+.pfoot .btn[disabled]{opacity:.45;cursor:not-allowed}
+.delx{position:relative;box-sizing:border-box;transition:background .3s,border-radius .3s,border-color .25s,box-shadow .3s,transform .3s}
+.delx .dx{font-style:normal;transition:opacity .2s,transform .3s}
+.delx .dk{position:absolute;inset:0;width:100%;height:100%;padding:5px;box-sizing:border-box;fill:none;stroke:#e5484d;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;opacity:0}
+.delx.sel{animation:none;background:#fff;color:#fff;border:2px solid #c9d3ce;border-radius:9px;box-shadow:none;transform:rotate(0);cursor:pointer}
+.delx.sel:hover{background:#fff;border-color:#e5484d}
+.delx.sel .dx{opacity:0;transform:scale(0) rotate(90deg)}
+.delx.sel.on{border-color:#e5484d;background:#fdeded;animation:delxPop .35s cubic-bezier(.2,1.5,.4,1)}
+.delx.sel.on .dk{opacity:1;animation:delxCheck .35s .08s ease-out forwards}
+@keyframes delxCheck{to{stroke-dashoffset:0}}
+@keyframes delxPop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+.plist.dm .mt.picked{border-color:#e5484d;background:#fffafa}
+@media(prefers-reduced-motion:reduce){.delx,.delx .dx{transition:none}.delx.sel.on,.delx.sel.on .dk{animation:none;stroke-dashoffset:0}}
