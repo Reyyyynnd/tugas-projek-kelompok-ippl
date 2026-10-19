@@ -211,14 +211,16 @@ const subAt = v => v && typeof v === 'object' ? v.at : null;
 // Pengumpulan lama (sebelum isi berkas disimpan) hanya punya nama berkas, sehingga tidak bisa dibuka pengajar
 // Satu pengumpulan bisa berisi beberapa lampiran (file atau link). Format lama (satu file) tetap terbaca.
 const itemsOf = f => !f || typeof f === 'string' ? [] : f.items ? f.items : (f.data ? [{ tipe: 'file', nama: f.nama, data: f.data }] : []);
-const legacyFile = f => !!f && itemsOf(f).length === 0;
+const legacyFile = f => !!f && !f.manual && itemsOf(f).length === 0;
 // Materi, instruksi tugas, dan instruksi quiz masing-masing bisa berisi sampai 5 lampiran (file atau link). Format lama tetap terbaca.
 const asList = v => !v ? [] : Array.isArray(v) ? v : [v];
 const fixTipe = it => it.tipe ? it : { ...it, tipe: 'file' };
 const matOf = x => asList(x.materi).map(fixTipe), tlOf = x => asList(x.tugasLamp || x.tugasFile).map(fixTipe), qlOf = x => asList(x.quizLamp).map(fixTipe);
 const adaQuiz = x => x.quiz.length > 0 || qlOf(x).length > 0;
 // Quiz selesai: soal sudah dikerjakan (jika ada soal) DAN quiz tautan/berkas sudah ditandai selesai atau dikirim hasilnya (jika ada)
-const quizDone = (p, x) => (!x.quiz.length || p.quiz[x.n] != null) && (!qlOf(x).length || !!p.qext[x.n]);
+// qext[n] bisa berisi { at, items, nilai } (terkirim) atau { kembali } (dikembalikan pengajar, belum dikirim ulang)
+const qeOk = qe => !!qe && !qe.kembali;
+const quizDone = (p, x) => (!x.quiz.length || p.quiz[x.n] != null) && (!qlOf(x).length || qeOk(p.qext[x.n]));
 const MAX_LAMP = 5, MAX_TOTAL = 3 * 1048576;
 const sizeTxt = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
 function bukaLink(url) { if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer'); else toast('Link tidak valid'); }
@@ -230,14 +232,22 @@ const lampList = (items, kind, mkId, n) => items.map((it, j) => lampRow(it, it.t
   : `<button class="btn sm" onclick="lihatRef('${kind}','${mkId}',${n},${j},'')">Lihat</button><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'')">Unduh</button>`)).join('');
 // Menyusun lampiran sebelum dikirim (tugas 't' atau hasil quiz 'q'): tambah file/link, hapus, lalu kirim
 const draftUI = (m, x, t, label) => {
-  const k = dkey(m.id, x.n, t), a = `'${m.id}',${x.n},'${t}'`, d = S.draft[k] || [], tot = d.reduce((s2, it) => s2 + (it.size || 0), 0), penuh = d.length >= MAX_LAMP;
-  return `<div class="draft"><div class="quote"><b>Lampiran</b> · ${d.length}/${MAX_LAMP} (file atau link)${d.length ? ' · ' + sizeTxt(tot) : ''}</div>
+  const k = dkey(m.id, x.n, t), a = `'${m.id}',${x.n},'${t}'`, d = S.draft[k] || [], tot = d.reduce((s2, it) => s2 + (it.size || 0), 0), penuh = d.length >= MAX_LAMP, menu = S.dMenu === k, linkOpen = S.dLink === k;
+  // Tombol "Tambah lampiran" membuka pilihan File atau Link (sama seperti di sisi pengajar)
+  const tambah = penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>'
+    : `<div class="addwrap"><button type="button" class="addbtn" aria-haspopup="menu" aria-expanded="${menu}" onclick="dMenu('${k}')"><span class="addplus" aria-hidden="true">＋</span>Tambah lampiran<span class="addcar" aria-hidden="true">▾</span></button>${menu ? `<div class="addmenu" role="menu"><button type="button" role="menuitem" class="addopt" onclick="dPilihFile('${k}')"><span class="addic" aria-hidden="true">📎</span><span><b>File</b><small>Unggah dari perangkat · maks. 1,5 MB</small></span></button><button type="button" role="menuitem" class="addopt" onclick="dPilihLink('${k}')"><span class="addic" aria-hidden="true">🔗</span><span><b>Link</b><small>Google Drive, GitHub, dll.</small></span></button></div>` : ''}</div>
+    <input type="file" multiple hidden id="fd-${k}" aria-label="Pilih file" onchange="tambahFile(${a})">
+    ${linkOpen ? `<div class="row addlink"><input class="lnk" id="ld-${k}" placeholder="https://… (tempel link di sini)" aria-label="Link" onkeydown="if(event.key==='Enter')tambahLink(${a})"><button class="btn ghost sm" onclick="tambahLink(${a})">+ Tambah link</button><button class="btn ghost sm" onclick="dPilihLink('')">Batal</button></div>` : ''}`;
+  return `<div class="draft"><div class="bsub">Lampiran <span class="bsm">· ${d.length}/${MAX_LAMP} (file atau link)${d.length ? ' · ' + sizeTxt(tot) : ''}</span></div>
     ${d.map((it, i) => lampRow(it, `<button class="btn ghost sm dng" onclick="hapusDraft(${a},${i})" aria-label="Hapus lampiran ${i + 1}">✕ Hapus</button>`)).join('')}
-    ${penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>' : `<div class="row" style="margin-top:8px"><input type="file" multiple id="fd-${k}" aria-label="Pilih file" onchange="tambahFile(${a})"></div>
-    <div class="row"><input class="lnk" id="ld-${k}" placeholder="https://… (link, mis. Google Drive atau GitHub)" aria-label="Link" onkeydown="if(event.key==='Enter')tambahLink(${a})"><button class="btn ghost sm" onclick="tambahLink(${a})">+ Tambah link</button></div>`}
+    ${tambah}
     <div class="row" style="margin-top:10px"><button class="btn lime" ${d.length ? '' : 'disabled'} onclick="send(${a})">${label}${d.length ? ' (' + d.length + ' lampiran)' : ''}</button></div>
     <div class="quote">Maksimal ${MAX_LAMP} lampiran. Tiap file maks. 1,5 MB, total maks. 3 MB. Lampiran bisa dihapus sebelum dikirim.</div></div>`;
 };
+// Menu "Tambah lampiran" di sisi partisipan (kunci k = dkey pertemuan)
+function dMenu(k) { S.dMenu = S.dMenu === k ? null : k; render(); }
+function dPilihFile(k) { S.dMenu = null; render(); const i = document.getElementById('fd-' + k); if (i) i.click(); }
+function dPilihLink(k) { S.dMenu = null; S.dLink = k || null; render(); if (k) { const i = document.getElementById('ld-' + k); if (i) i.focus(); } }
 const MAXB = 1.5 * 1048576;   // batas ukuran berkas
 const readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('baca')); r.readAsDataURL(f); });
 // Buka berkas apa pun: PDF/gambar dibuka di tab baru, selain itu diunduh
@@ -315,7 +325,9 @@ const head = () => heroB() + banner();
 const empty = (ic, t, d, btn) => `<div class="card empty-s"><div class="big-ic">${ic}</div><h3>${t}</h3><p class="quote">${d}</p>${btn}</div>`;
 const sc = (l, v, ic, bg, c, sub, cls, act, pop) => `<div class="card stat${act ? ' click' : ''}"${act ? ` role="button" tabindex="0" onclick="${act}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"` : ''}><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${typeof v === 'number' ? `<span class="cnt" data-to="${v}">${v}</span>` : v}</div>${sub ? `<div class="ssub">${sub}</div>` : ''}</div><div class="ic ${cls || ''}" style="background:${bg}">${ic}</div>${act ? '<span class="more">Lihat detail ›</span>' : ''}${pop || ''}</div>`;
 const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
-const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}</h1><div class="quote">${m.kode ? esc(m.kode) + ' · ' : ''}${sub}</div></div></div>`; };
+const cap1 = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+const hl = (l, v) => `<span class="hlbl">${l}:</span> ${v}`;   // "Label: nilai" untuk subjudul header
+const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}${m.kode ? ` <span class="hid">(${esc(m.kode)})</span>` : ''}</h1><div class="hsub">${sub}</div></div></div>`; };
 const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
 const btnMk = '<button class="btn lime" onclick="mkModal()">Buat pelajaran</button>';
 const fmtDt = ts => new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -464,9 +476,9 @@ function ringkas(u) {
     const mine = st.mk().filter(m => m.dosen === u.email); let kelas = 0, mhs = 0, pert = 0, kirim = 0, nilai = 0;
     mine.forEach(m => m.kelas.forEach(k => {
       kelas++; pert += k.pert.length; const ss = studentsOf(m.id, k.id); mhs += ss.length;
-      k.pert.filter(x => x.tugas).forEach(x => ss.forEach(w => { const q = P(m.id, w.email); if (q.sub[x.n]) { kirim++; if (!q.nilai[x.n]) nilai++; } }));
+      k.pert.forEach(x => ss.forEach(w => { const q = P(m.id, w.email); if (x.tugas && q.sub[x.n]) { kirim++; if (!q.nilai[x.n]) nilai++; } const qe = q.qext[x.n]; if (qlOf(x).length && qeOk(qe) && itemsOf(qe).length) { kirim++; if (!qe.nilai) nilai++; } }));
     }));
-    return { mine, tiles: [[mine.length, 'Pelajaran diampu'], [kelas, 'Total kelas'], [mhs, 'Partisipan'], [pert, 'Pertemuan dibuat'], [kirim, 'Tugas terkumpul'], [nilai, 'Perlu dinilai']] };
+    return { mine, tiles: [[mine.length, 'Pelajaran diampu'], [kelas, 'Total kelas'], [mhs, 'Partisipan'], [pert, 'Pertemuan dibuat'], [kirim, 'Tugas & quiz terkumpul'], [nilai, 'Perlu dinilai']] };
   }
   const L = st.jn().filter(j => j.mhs === u.email).map(j => getMk(j.mkId)).filter(Boolean); let hadir = 0, held = 0, tasks = 0, done = 0; const skor = [];
   L.forEach(m => { const q = stats(m, u.email); hadir += q.hadir; held += q.held; tasks += q.tasks; done += q.done; Object.values(P(m.id, u.email).nilai).forEach(nl => { if (nl.skor != null) skor.push(nl.skor); }); });
@@ -580,7 +592,7 @@ function home() {
     const kls = L.reduce((a, m) => a + m.kelas.length, 0), mhs = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
     const nDinilai = ringkas(U).tiles[5][0], pfD = prefOf(U);
     const hero = head();
-    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas menunggu penilaian</b><div class="quote">Buka Pelajaran, pilih kelas, lalu Pertemuan → Pengumpulan.</div></div><button class="btn lime" onclick="go('courses')">Buka pelajaran</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#fff0d2', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
+    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#fff0d2', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
   }
   if (!L.length) return head() + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
   const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
@@ -607,7 +619,7 @@ function statRows(kind) {
     } else if (kind === 'done') {
       const nl = p.nilai[x.n];
       if (x.tugas && p.sub[x.n]) rows.push({ m, x, chip: ['Tugas', 'c-ok'], note: nl ? (nl.skor != null ? 'Nilai ' + nl.skor : 'Sudah dinilai') : 'Menunggu penilaian' });
-      if (adaQuiz(x) && quizDone(p, x)) rows.push({ m, x, chip: ['Quiz', 'c-ok'], note: 'Selesai' });
+      if (adaQuiz(x) && quizDone(p, x)) { const qe = p.qext[x.n], kirim = qlOf(x).length && qe && itemsOf(qe).length > 0; rows.push({ m, x, chip: ['Quiz', 'c-ok'], note: kirim ? (qe.nilai ? (qe.nilai.skor != null ? 'Nilai ' + qe.nilai.skor : 'Sudah dinilai') : 'Menunggu penilaian') : 'Selesai' }); }
     } else {
       const a = p.att[x.n];
       rows.push({ m, x, chip: a === 'H' ? ['Hadir', 'c-ok'] : a === 'I' ? ['Izin', 'c-iz'] : a === 'A' ? ['Alpa', 'c-no'] : absenOpen(x) ? ['Absen dibuka', 'c-bl'] : x.absen && x.absen.dur > 0 ? ['Terlewat', 'c-no'] : ['Tanpa absen', 'c-wait'] });
@@ -653,7 +665,7 @@ function coursePage() {
 // --- tampilan partisipan (hanya nama pelajaran, bukan nama kelas) ---
 function courseM(m) {
   const s2 = stats(m, U.email), p = P(m.id, U.email), pt = pertOf(m, U.email), pct = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
-  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, 'Pengajar: ' + esc(m.dosenNama) + (m.jadwal ? ' · ' + esc(m.jadwal) : ''))}
+  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, hl('Pengajar', esc(m.dosenNama)) + (m.jadwal ? ' <span class="hdot">·</span> ' + hl('Jadwal', esc(cap1(m.jadwal))) : ''))}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost dng" onclick="keluarModal('${m.id}')">🚪 Keluar dari pelajaran</button></div>
   <div class="grid4">${kp('Kehadiran', `${s2.hadir}<small>/${s2.held}</small>`, pct + '% hadir')}${kp('Total pertemuan', `${s2.held}<small>/${TOTAL}</small>`)}${kp('Tugas selesai', `${s2.done}<small>/${s2.tasks}</small>`)}${kp('Perlu dikerjakan', `<span style="color:${s2.todo ? 'var(--red)' : 'inherit'}">${s2.todo}</span>`)}</div>
   <h2>Daftar pertemuan</h2>${pt.length ? pt.map(x => meetingM(m, x, p)).join('') : '<p class="empty">Pengajar belum membuka pertemuan.</p>'}`;
@@ -667,13 +679,15 @@ function meetingM(m, x, p) {
   if (o) {
     const ab = a ? `Status absenmu: <b>${lbl[a][1]}</b>` : op ? `<div class="row"><span>Sisa waktu absen: <b>${cd(x)}</b></span><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`
       : `<span class="empty">${x.absen && x.absen.dur > 0 ? 'Batas waktu absen sudah lewat. Hubungi pengajar jika perlu diabsen.' : 'Absensi diisi oleh pengajar.'}</span>`;
-    body = `<div class="body"><div class="blk"><h4>Absensi</h4>${ab}</div><div class="blk"><h4>Materi</h4>${matOf(x).length ? lampList(matOf(x), 'mat', m.id, x.n) : '<span class="empty">Pengajar belum membagikan materi.</span>'}</div>`;
+    body = `<div class="body"><div class="blk"><h4>Absensi</h4>${ab}</div><div class="blk"><h4>Materi</h4>${x.materiDesc ? `<div class="bsub">Deskripsi materi</div><p class="bdesc">${esc(x.materiDesc)}</p>` : ''}${matOf(x).length ? lampList(matOf(x), 'mat', m.id, x.n) : '<span class="empty">Pengajar belum membagikan materi.</span>'}</div>`;
+    // pembatas: Absensi dan Materi hanya dilihat, Tugas dan Quiz adalah bagian yang dikerjakan/dikirim partisipan
+    if (x.tugas || adaQuiz(x)) body += '<div class="bsep"><span>Perlu dikerjakan</span></div>';
     if (x.tugas) {
       const f = p.sub[x.n], nl = p.nilai[x.n], kb = p.kembali[x.n], lg = legacyFile(f), late = over(x.tugasDl) && !lg && !kb;
       const upload = draftUI(m, x, 't', f || kb ? 'Kirim ulang tugas' : 'Kirim tugas');
-      const nilaiHtml = nl ? `<div class="nilai">✅ Sudah dinilai${nl.skor != null ? ` · Nilai <b>${nl.skor}</b>` : ''}${nl.cat ? `<div class="quote">Catatan pengajar: ${esc(nl.cat)}</div>` : ''}</div>` : '<div class="quote" style="margin-top:6px">Menunggu penilaian pengajar.</div>';
-      body += `<div class="blk"><h4>Tugas pertemuan ${x.n} ${dlChip(x.tugasDl)}</h4><p style="margin:0 0 8px">${esc(x.tugas)}</p>`
-        + (tlOf(x).length ? `<div class="quote"><b>Instruksi tugas</b></div>${lampList(tlOf(x), 'tl', m.id, x.n)}<div style="height:8px"></div>` : '')
+      const nilaiHtml = nl && nl.manual ? '<div class="nilai">✅ Ditandai selesai oleh pengajar</div>' : nl ? `<div class="nilai">✅ Sudah dinilai${nl.skor != null ? ` · Nilai <b>${nl.skor}</b>` : ''}${nl.cat ? `<div class="quote">Catatan pengajar: ${esc(nl.cat)}</div>` : ''}</div>` : '<div class="quote" style="margin-top:6px">Menunggu penilaian pengajar.</div>';
+      body += `<div class="blk"><h4>Tugas ${dlChip(x.tugasDl)}</h4><div class="bsub">Deskripsi tugas</div><p class="bdesc">${esc(x.tugas)}</p>`
+        + (tlOf(x).length ? `<div class="bsub">Instruksi tugas</div>${lampList(tlOf(x), 'tl', m.id, x.n)}<div style="height:8px"></div>` : '')
         + (f
           ? `<div class="row"><span class="chip c-ok">Terkirim</span><span style="font-size:13px">${subAt(f) ? fmtDt(subAt(f)) : ''}</span>${lg || nl || late ? '' : `<button class="btn ghost" onclick="unsend('${m.id}',${x.n})">Kirim ulang</button>`}</div>`
             + (itemsOf(f).length ? `<div class="ditems">${lampList(itemsOf(f), 'sub', m.id, x.n)}</div>` : `<div class="quote">${esc(subName(f))}</div>`)
@@ -682,12 +696,13 @@ function meetingM(m, x, p) {
           : (kb ? `<div class="warnbox">↩️ <b>Tugas dikembalikan pengajar</b> untuk diperbaiki${kb.lama ? ' (berkas sebelumnya: ' + esc(kb.lama) + ')' : ''}.${kb.cat ? `<div class="quote">Catatan pengajar: ${esc(kb.cat)}</div>` : ''}</div>` : '') + (late ? '<span class="empty">Batas waktu pengumpulan sudah lewat. Hubungi pengajar jika perlu.</span>' : upload)) + '</div>';
     }
     if (adaQuiz(x)) {
-      const late = over(x.quizDl), sq = p.quiz[x.n], qe = p.qext[x.n];
-      let q = `<div class="blk"><h4>Quiz ${dlChip(x.quizDl)}</h4>`;
+      const late = over(x.quizDl), sq = p.quiz[x.n], qe0 = p.qext[x.n], qe = qeOk(qe0) ? qe0 : null, qkb = qe0 && qe0.kembali;
+      let q = `<div class="blk"><h4>Quiz ${dlChip(x.quizDl)}</h4>${x.quizDesc ? `<div class="bsub">Deskripsi quiz</div><p class="bdesc">${esc(x.quizDesc)}</p>` : ''}`;
       if (x.quiz.length) q += `<div class="row">${sq != null ? `<span class="chip c-bl">Nilai ${sq}</span>${late ? '' : `<button class="btn ghost" onclick="quiz('${m.id}',${x.n})">Kerjakan ulang</button>`}` : late ? '<span class="empty">Batas waktu quiz sudah lewat.</span>' : `<span>Quiz soal dari pengajar (${x.quiz.length} soal).</span><button class="btn lime" onclick="quiz('${m.id}',${x.n})">Kerjakan quiz</button>`}</div>`;
       if (qlOf(x).length) {
-        q += `<div class="quote" style="margin-top:${x.quiz.length ? 10 : 0}px"><b>Instruksi / link quiz</b></div>${lampList(qlOf(x), 'ql', m.id, x.n)}`;
-        if (qe) q += `<div class="row" style="margin-top:8px"><span class="chip c-ok">Selesai</span><span style="font-size:13px">${(qe.items || []).length ? 'Hasil dikirim ' : 'Ditandai selesai '}${fmtDt(qe.at)}</span>${late ? '' : `<button class="btn ghost sm" onclick="batalQext('${m.id}',${x.n})">Batalkan</button>`}</div>${(qe.items || []).length ? `<div class="ditems">${lampList(qe.items, 'qx', m.id, x.n)}</div>` : ''}`;
+        q += `<div class="bsub" style="margin-top:${x.quiz.length ? 10 : 0}px">Instruksi quiz</div>${lampList(qlOf(x), 'ql', m.id, x.n)}`;
+        if (qkb) q += `<div class="warnbox">↩️ <b>Hasil quiz dikembalikan pengajar</b> untuk diperbaiki.${qkb.cat ? `<div class="quote">Catatan pengajar: ${esc(qkb.cat)}</div>` : ''}</div>`;
+        if (qe) q += `<div class="row" style="margin-top:8px"><span class="chip c-ok">Selesai</span><span style="font-size:13px">${(qe.items || []).length ? 'Hasil dikirim ' : qe.oleh ? 'Ditandai selesai oleh pengajar ' : 'Ditandai selesai '}${fmtDt(qe.at)}</span>${late || qe.nilai || qe.oleh ? '' : `<button class="btn ghost sm" onclick="batalQext('${m.id}',${x.n})">Batalkan</button>`}</div>${(qe.items || []).length ? `<div class="ditems">${lampList(qe.items, 'qx', m.id, x.n)}</div>` : ''}${(qe.items || []).length ? (qe.nilai ? `<div class="nilai">✅ Sudah dinilai${qe.nilai.skor != null ? ` · Nilai <b>${qe.nilai.skor}</b>` : ''}${qe.nilai.cat ? `<div class="quote">Catatan pengajar: ${esc(qe.nilai.cat)}</div>` : ''}</div>` : '<div class="quote" style="margin-top:6px">Menunggu penilaian pengajar.</div>') : ''}`;
         else if (late) q += '<div class="empty">Batas waktu quiz sudah lewat.</div>';
         else q += `<div class="row" style="margin-top:10px"><button class="btn lime" onclick="tandaiQuiz('${m.id}',${x.n})">✓ Tandai selesai</button><span class="quote">atau kirim hasil pengerjaanmu seperti tugas:</span></div>${draftUI(m, x, 'q', 'Kirim hasil quiz')}`;
       }
@@ -734,7 +749,7 @@ function tambahLink(mkId, n, t) {
   const k = dkey(mkId, n, t), inp = document.getElementById('ld-' + k); if (!inp) return;
   const msg = addLink(S.draft[k] = S.draft[k] || [], inp.value.trim());
   if (msg) { toast(msg); return; }
-  inp.value = ''; render();
+  inp.value = ''; S.dLink = null; render();
 }
 function hapusDraft(mkId, n, t, i) { const d = S.draft[dkey(mkId, n, t)]; if (d) d.splice(i, 1); render(); }
 // Berkas disimpan di Supabase Storage (bucket "lampiran"); di database hanya tersimpan nama, ukuran, dan path-nya.
@@ -768,6 +783,7 @@ async function withData(it) {
 let BUSY = false;
 async function send(mkId, n, t) {
   if (BUSY) return;
+  S.dMenu = null; S.dLink = null;
   const x = pertAt(mkId, n); if (!x) return;
   const k = dkey(mkId, n, t), d = S.draft[k] || [];
   if (!d.length) { toast('Tambahkan minimal satu file atau link dulu'); return; }
@@ -796,7 +812,7 @@ function tandaiQuiz(mkId, n) {
 }
 function batalQext(mkId, n) {
   const x = pertAt(mkId, n); if (x && over(x.quizDl)) { toast('Batas waktu sudah lewat'); return; }
-  const p = P(mkId, U.email); delete p.qext[n]; setP(mkId, U.email, p); render();
+  const p = P(mkId, U.email); if (p.qext[n] && p.qext[n].nilai) { toast('Quiz sudah dinilai, tidak bisa dibatalkan'); return; } delete p.qext[n]; setP(mkId, U.email, p); render();
 }
 function unsend(mkId, n) {
   const x = pertAt(mkId, n), p = P(mkId, U.email);
@@ -829,7 +845,7 @@ function courseD(m) {
     const n = studentsOf(m.id, k.id).length;
     return `<button class="course" onclick="bukaKelas('${k.id}')"><div class="hd"><div class="ic" style="background:var(--limeS);font-weight:800">${esc(k.nama.trim().slice(-1).toUpperCase())}</div><div><b>${esc(k.nama)}</b><span class="s">${n} partisipan</span></div><span class="code-pill" style="margin-left:auto">${esc(k.kode)}</span></div><div class="bar"><i style="width:${k.pert.length / TOTAL * 100}%"></i></div><div class="meta"><span>Pertemuan ${k.pert.length}/${TOTAL}</span><span>Buka kelas →</span></div></button>`;
   }).join('');
-  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, esc(m.jadwal || 'Pelajaran saya'))}
+  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, m.jadwal ? hl('Jadwal', esc(cap1(m.jadwal))) : 'Pelajaran saya')}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="mkModal('${m.id}')">✏️ Ubah pelajaran</button><button class="btn ghost dng" onclick="hapusMkModal('${m.id}')">🗑 Hapus pelajaran</button></div>
   <div class="grid3">${kp('Kelas', m.kelas.length)}${kp('Partisipan bergabung', studentsOf(m.id).length)}${kp('Pertemuan berjalan', totalPert(m), 'total dari semua kelas')}</div>
   <h2>Kelas</h2>${cards ? `<div class="courses">${cards}</div>` : '<p class="empty">Belum ada kelas. Buat kelas pertama di bawah.</p>'}
@@ -838,8 +854,8 @@ function courseD(m) {
   <label class="f">Kode kelas<span class="row" style="flex-wrap:nowrap"><input id="kKode" placeholder="PBO-A" maxlength="16" style="text-transform:uppercase"><button type="button" class="btn ghost" onclick="acak('${m.id}')">Acak</button></span></label></div>
   <p class="err" id="kErr" role="alert"></p><button class="btn lime" style="margin-top:8px" onclick="addKelas('${m.id}')">Tambah kelas</button></div>`;
 }
-function bukaKelas(kid) { S.view = 'kelas'; S.kid = kid; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
-function bukaPert() { S.view = 'pert'; S.edit = null; S.pfKey = null; render(); window.scrollTo(0, 0); }
+function bukaKelas(kid) { S.view = 'kelas'; S.kid = kid; S.edit = null; S.pfKey = null; S.delMode = false; render(); window.scrollTo(0, 0); }
+function bukaPert() { S.view = 'pert'; S.pTab = 'pertemuan'; S.edit = null; S.pfKey = null; S.delMode = false; render(); window.scrollTo(0, 0); }
 async function kodeDipakai(kode, kelasId, e) {
   const { data, error } = await sb.rpc('kode_dipakai', { p_kode: kode, p_kelas_id: kelasId });
   if (error) { e.textContent = 'Gagal memeriksa kode: ' + error.message; return true; }
@@ -870,15 +886,57 @@ function ctxKelas() {
   const m = getMk(S.cid), k = getKelas(m, S.kid);
   return isDosen && m && k && m.dosen === U.email ? { m, k } : null;
 }
+// Ringkasan satu partisipan di sebuah kelas: absen, tugas, dan quiz dari seluruh pertemuan
+function ringkasMhs(m, k, u) {
+  const p = P(m.id, u.email), r = { p, n: k.pert.length, hadir: 0, tN: 0, tD: 0, qN: 0, qD: 0 };
+  k.pert.forEach(x => {
+    if (p.att[x.n] === 'H') r.hadir++;
+    if (x.tugas) { r.tN++; if (p.sub[x.n]) r.tD++; }
+    if (adaQuiz(x)) { r.qN++; if (quizDone(p, x)) r.qD++; }
+  });
+  return r;
+}
+// Rincian per pertemuan untuk tombol Absen (t='a'), Tugas ('t'), atau Quiz ('q')
+function mhList(k, p, t) {
+  const lbl = { H: ['c-ok', 'Hadir'], I: ['c-iz', 'Izin'], A: ['c-no', 'Alpa'] };
+  const row = (x, chip) => `<div class="mh-row"><span class="mh-n">${x.n}</span><span class="mh-t">${esc(x.topik)}</span>${chip}</div>`;
+  if (t === 'a') return k.pert.map(x => { const a = p.att[x.n]; return row(x, a ? `<span class="chip ${lbl[a][0]}">${lbl[a][1]}</span>` : '<span class="chip c-wait">Belum diabsen</span>'); }).join('') || '<div class="mh-empty">Belum ada pertemuan di kelas ini.</div>';
+  if (t === 't') return k.pert.filter(x => x.tugas).map(x => { const f = p.sub[x.n], nl = p.nilai[x.n]; return row(x, nl ? `<span class="chip c-ok">Dinilai${nl.skor != null ? ' · ' + nl.skor : ''}</span>` : f ? '<span class="chip c-iz">Terkirim · perlu dinilai</span>' : p.kembali[x.n] ? '<span class="chip c-iz">Dikembalikan</span>' : '<span class="chip c-wait">Belum dikirim</span>'); }).join('') || '<div class="mh-empty">Belum ada tugas yang dibuat.</div>';
+  return k.pert.filter(adaQuiz).map(x => row(x, quizDone(p, x) ? `<span class="chip c-bl">${x.quiz.length && p.quiz[x.n] != null ? 'Nilai ' + p.quiz[x.n] : 'Selesai'}</span>` : '<span class="chip c-wait">Belum dikerjakan</span>')).join('') || '<div class="mh-empty">Belum ada quiz yang dibuat.</div>';
+}
+function tabMhs(key, t) { S.open[key] = S.open[key] === t ? '' : t; render(); }
+function partisipanCard(m, k, u, i) {
+  const r = ringkasMhs(m, k, u), key = 'prt-' + k.id + '-' + String(u.email).replace(/[^\w@.\-]/g, '_'), tab = S.open[key] || '';
+  const tb = (t, l, d, n) => `<button class="btn ghost sm mh-tab${tab === t ? ' on' : ''}" aria-expanded="${tab === t}" onclick="tabMhs('${key}','${t}')">${l} <b>${d}/${n}</b></button>`;
+  return `<div class="mh-card"><div class="mh-head"><div class="mh-av" aria-hidden="true">${esc((u.nama || '?').trim().charAt(0).toUpperCase())}</div><div class="mh-info"><b>${esc(u.nama)}</b><span>${esc(u.id)} · ${esc(u.email)}</span></div><button class="btn ghost sm dng" onclick="keluarkanModal(${i})">Keluarkan</button></div>
+  <div class="mh-tabs">${tb('a', 'Absen', r.hadir, r.n)}${tb('t', 'Tugas', r.tD, r.tN)}${tb('q', 'Quiz', r.qD, r.qN)}</div>${tab ? `<div class="mh-panel">${mhList(k, r.p, tab)}</div>` : ''}</div>`;
+}
+let KEL = '';   // email partisipan yang akan dikeluarkan
+function keluarkanModal(i) {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, u = studentsOf(m.id, k.id)[i]; if (!u) return;
+  KEL = u.email;
+  const p = P(m.id, u.email), nA = Object.keys(p.att).length, nT = Object.keys(p.sub).length, nQ = Object.keys(p.quiz).length + Object.keys(p.qext).length;
+  modal(`<h3>Keluarkan “${esc(u.nama)}” dari kelas ${esc(k.nama)}?</h3><div class="warnbox" ${merah}>Data belajar partisipan ini di pelajaran akan <b>dihapus</b> dan tidak bisa dikembalikan.</div>
+  <ul class="dampak"><li>${nA} catatan absen, ${nT} tugas yang sudah dikirim beserta nilainya, dan ${nQ} hasil quiz ikut terhapus.</li>
+  <li>Partisipan bisa bergabung lagi dengan kode kelas <b>${esc(k.kode)}</b>, tetapi data lama tidak kembali.</li></ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarkanMhs()">Ya, keluarkan</button></div>`);
+}
+function keluarkanMhs() {
+  const c = ctxKelas(); if (!c || !KEL) return; const { m, k } = c, u = studentsOf(m.id, k.id).find(q => q.email === KEL);
+  if (!u) { KEL = ''; tutupModal(); return; }
+  st.setJn(st.jn().filter(j => !(j.mkId === m.id && j.mhs === u.email)));
+  const pr = st.pr(); if (pr[m.id]) delete pr[m.id][u.email]; st.setPr(pr);
+  KEL = ''; tutupModal(); render(); toast(u.nama + ' dikeluarkan dari kelas');
+}
 function kelasPage() {
   const c = ctxKelas(); if (!c) { S.view = 'courses'; return coursesPage(); }
   const { m, k } = c, ss = studentsOf(m.id, k.id);
-  return `<button class="back" onclick="go('course','${m.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(m.nama)}</button>${hdr(m, 'Kelas: ' + esc(k.nama))}
+  return `<button class="back" onclick="go('course','${m.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(m.nama)}</button>${hdr(m, hl('Kelas', esc(k.nama)))}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="kelasModal()">✏️ Ubah kelas</button><button class="btn ghost dng" onclick="hapusKelasModal()">🗑 Hapus kelas</button></div>
   <div class="grid3"><div class="card kp"><div class="l">Kode kelas</div><div style="margin:8px 0"><span class="code-pill big">${esc(k.kode)}</span></div><button class="btn ghost" onclick="salin('${esc(k.kode)}')">Salin kode</button></div>
   ${kp('Partisipan bergabung', ss.length)}${kp('Pertemuan berjalan', `${k.pert.length}<small>/${TOTAL}</small>`)}</div>
   <div class="row" style="margin-top:18px"><button class="btn lime" onclick="bukaPert()">Info selengkapnya →</button><span class="quote">Atur materi, tugas, quiz, dan absensi untuk ${esc(k.nama)}.</span></div>
-  <h2>Partisipan (${ss.length})</h2><div class="card">${ss.length ? ss.map(u => `<div class="srow"><b>${esc(u.nama)}</b><span>${esc(u.id)} · ${esc(u.email)}</span></div>`).join('') : '<span class="empty">Belum ada partisipan yang bergabung. Bagikan kode kelas di atas.</span>'}</div>`;
+  <h2>Partisipan (${ss.length})</h2>${ss.length ? ss.map((u, i) => partisipanCard(m, k, u, i)).join('') : '<div class="card"><span class="empty">Belum ada partisipan yang bergabung. Bagikan kode kelas di atas.</span></div>'}`;
 }
 
 // --- tampilan pengajar: pertemuan sebuah kelas ---
@@ -887,14 +945,18 @@ const qzText = qz => qz.map(q => [q.q, ...q.o, q.a + 1].join(' | ')).join('\n');
 const ALB = { mat: 'Materi', tl: 'Lampiran instruksi tugas', ql: 'Link / file untuk quiz' };
 function pfInit(k, e) {
   const key = (e ? 'e' + e.n : 'n' + k.pert.length) + ':' + k.id;
-  if (S.pfKey !== key) { S.pfKey = key; S.pf = { mat: e ? matOf(e).slice() : [], tl: e ? tlOf(e).slice() : [], ql: e ? qlOf(e).slice() : [] }; }
+  if (S.pfKey !== key) { S.pfKey = key; S.pfMenu = null; S.pfLink = null; S.pf = { mat: e ? matOf(e).slice() : [], tl: e ? tlOf(e).slice() : [], ql: e ? qlOf(e).slice() : [] }; }
 }
 function lampEditorInner(kind) {
-  const d = S.pf[kind], tot = d.reduce((a, it) => a + (it.size || 0), 0), penuh = d.length >= MAX_LAMP;
+  const d = S.pf[kind], tot = d.reduce((a, it) => a + (it.size || 0), 0), penuh = d.length >= MAX_LAMP, menu = S.pfMenu === kind, linkOpen = S.pfLink === kind;
+  // Tombol "Tambah lampiran" membuka pilihan File atau Link (bukan lagi kolom unggah dan kolom link yang selalu tampil)
+  const tambah = penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>'
+    : `<div class="addwrap"><button type="button" class="addbtn" aria-haspopup="menu" aria-expanded="${menu}" onclick="pfMenu('${kind}')"><span class="addplus" aria-hidden="true">＋</span>Tambah lampiran<span class="addcar" aria-hidden="true">▾</span></button>${menu ? `<div class="addmenu" role="menu"><button type="button" role="menuitem" class="addopt" onclick="pfPilihFile('${kind}')"><span class="addic" aria-hidden="true">📎</span><span><b>File</b><small>Unggah dari perangkat · maks. 1,5 MB</small></span></button><button type="button" role="menuitem" class="addopt" onclick="pfPilihLink('${kind}')"><span class="addic" aria-hidden="true">🔗</span><span><b>Link</b><small>Google Drive, YouTube, Google Form, dll.</small></span></button></div>` : ''}</div>
+    <input type="file" multiple hidden id="pf-f-${kind}" aria-label="Pilih file" onchange="pfFile('${kind}')">
+    ${linkOpen ? `<div class="row addlink"><input class="lnk" id="pf-l-${kind}" placeholder="https://… (tempel link di sini)" aria-label="Link" onkeydown="if(event.key==='Enter'){event.preventDefault();pfLink('${kind}')}"><button type="button" class="btn ghost sm" onclick="pfLink('${kind}')">+ Tambah link</button><button type="button" class="btn ghost sm" onclick="pfPilihLink('')">Batal</button></div>` : ''}`;
   return `<div class="quote"><b>${ALB[kind]}</b> · ${d.length}/${MAX_LAMP} (file atau link)${d.length ? ' · ' + sizeTxt(tot) : ''}</div>
     ${d.map((it, i) => lampRow(it, `<button type="button" class="btn ghost sm dng" onclick="pfHapus('${kind}',${i})" aria-label="Hapus lampiran ${i + 1}">✕ Hapus</button>`)).join('')}
-    ${penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>' : `<div class="row" style="margin-top:8px"><input type="file" multiple id="pf-f-${kind}" aria-label="Pilih file" onchange="pfFile('${kind}')"></div>
-    <div class="row"><input class="lnk" id="pf-l-${kind}" placeholder="https://… (link, mis. Google Drive, YouTube, Google Form)" aria-label="Link" onkeydown="if(event.key==='Enter'){event.preventDefault();pfLink('${kind}')}"><button type="button" class="btn ghost sm" onclick="pfLink('${kind}')">+ Tambah link</button></div>`}
+    ${tambah}
     <div class="quote">Maksimal ${MAX_LAMP} lampiran (file atau link). Tiap file maks. 1,5 MB, total maks. 3 MB.</div>`;
 }
 const lampEditor = kind => `<div class="draft" id="ed-${kind}">${lampEditorInner(kind)}</div>`;
@@ -905,39 +967,220 @@ async function pfFile(kind) {
 }
 function pfLink(kind) {
   const inp = document.getElementById('pf-l-' + kind); if (!inp || !S.pf) return;
-  const msg = addLink(S.pf[kind], inp.value.trim()); if (msg) { toast(msg); return; } inp.value = ''; pfRefresh(kind);
+  const msg = addLink(S.pf[kind], inp.value.trim()); if (msg) { toast(msg); return; } inp.value = ''; S.pfLink = null; pfRefresh(kind);
+}
+function pfMenu(kind) { const prev = S.pfMenu; S.pfMenu = prev === kind ? null : kind; if (prev && prev !== kind) pfRefresh(prev); pfRefresh(kind); }
+function pfPilihFile(kind) { S.pfMenu = null; pfRefresh(kind); const i = document.getElementById('pf-f-' + kind); if (i) i.click(); }
+function pfPilihLink(kind) {
+  const prev = S.pfLink; S.pfMenu = null; S.pfLink = kind || null;
+  if (prev) pfRefresh(prev);
+  if (kind) { pfRefresh(kind); const i = document.getElementById('pf-l-' + kind); if (i) i.focus(); }
 }
 function pfHapus(kind, i) { if (S.pf) S.pf[kind].splice(i, 1); pfRefresh(kind); }
 
+function pTab(t) { S.pTab = t; S.delMode = false; S.edit = null; S.pfKey = null; S.kQ = ''; S.kN = ''; S.kJ = ''; S.kLim = KPAGE; render(); }
+// Tab Pengumpulan: dua tab ringkas (Belum dinilai, Sudah dinilai) selalu terlihat di atas, lengkap dengan
+// pencarian partisipan, filter jenis (tugas/quiz), filter pertemuan, dan daftar yang dibatasi per 10 baris.
+// Setiap baris diberi label jenisnya. Tugas dan quiz berupa file/link dinilai pengajar; quiz yang hanya ditandai selesai langsung "Selesai".
+const KPAGE = 10;
+function kumpulItems(m, k, ss) {
+  const items = [];
+  k.pert.forEach(x => ss.forEach(u => {
+    const p = P(m.id, u.email);
+    if (x.tugas && p.sub[x.n]) items.push({ x, u, jenis: 'tugas', f: p.sub[x.n], nl: p.nilai[x.n], gr: !p.sub[x.n].manual });
+    if (qlOf(x).length) { const qe = p.qext[x.n]; if (qeOk(qe)) items.push({ x, u, jenis: 'quiz', f: qe, nl: qe.nilai, gr: itemsOf(qe).length > 0 }); }
+    if (x.quiz.length && p.quiz[x.n] != null) items.push({ x, u, jenis: 'quiz', f: { at: p.qt[x.n] }, nl: null, gr: false, skor: p.quiz[x.n] });
+  }));
+  return items;
+}
+// butuh dinilai = ada berkas yang dikirim tapi belum diberi nilai. Quiz yang hanya ditandai selesai tidak perlu dinilai.
+const kmpSudah = i => !i.gr || !!i.nl;
+// Partisipan yang belum mengirim tugas / belum menyelesaikan quiz (termasuk yang dikembalikan)
+function kumpulBelumKirim(m, k, ss) {
+  const out = [];
+  k.pert.forEach(x => ss.forEach(u => {
+    const p = P(m.id, u.email);
+    if (x.tugas && !p.sub[x.n]) out.push({ x, u, jenis: 'tugas', kb: !!p.kembali[x.n], bisa: true });
+    if (adaQuiz(x) && !quizDone(p, x)) out.push({ x, u, jenis: 'quiz', kb: !!(p.qext[x.n] && p.qext[x.n].kembali), bisa: qlOf(x).length > 0 && !qeOk(p.qext[x.n]) });
+  }));
+  return out;
+}
+// Gabungkan tugas & quiz yang belum selesai milik partisipan yang sama di pertemuan yang sama menjadi satu baris
+function gabungBelum(list) {
+  const g = {};
+  list.forEach(i => { const key = i.x.n + '|' + i.u.email; (g[key] = g[key] || { x: i.x, u: i.u, list: [] }).list.push(i); });
+  return Object.values(g).sort((a, b) => a.x.n - b.x.n || a.u.nama.localeCompare(b.u.nama));
+}
+// Tombol "Berikan selesai": kalau hanya satu yang bisa diselesaikan langsung konfirmasi, kalau tugas DAN quiz tampilkan pilihan
+// Beranda pengajar: daftar tugas / quiz yang menunggu penilaian di semua pelajaran, kelas, dan pertemuan.
+// Tugas dan quiz dipisah (tiap baris satu jenis). "Berikan penilaian" langsung membuka Pengumpulan > Belum dinilai.
+function perluDinilaiModal() {
+  if (!isDosen) return;
+  const list = [];
+  st.mk().filter(m => m.dosen === U.email).forEach(m => m.kelas.forEach(k => {
+    const n = kumpulItems(m, k, studentsOf(m.id, k.id)).filter(i => i.gr && !i.nl).length;
+    if (n) list.push({ m, k, n });
+  }));
+  list.sort((a, b) => a.m.nama.localeCompare(b.m.nama) || a.k.nama.localeCompare(b.k.nama));
+  const row = r => `<div class="pt-row"><div class="pt-who" style="flex:1 1 auto"><b style="font-size:18px;font-weight:800;color:var(--tx);line-height:1.25">${esc(r.m.nama)}</b><span style="color:#4a6356;font-weight:700;font-size:13px;margin-top:2px">Kelas ${esc(r.k.nama)}</span></div><span class="chip c-iz">${r.n} perlu dinilai</span><button class="btn lime sm" onclick="nilaiDariBeranda('${esc(r.m.id)}','${esc(r.k.id)}')">Berikan penilaian</button></div>`;
+  modal(`<h3>Menunggu penilaian</h3><div class="quote">Tugas dan quiz dari partisipan yang belum kamu nilai.</div><div style="margin-top:12px">${list.map(row).join('') || '<div class="pt-empty">Tidak ada tugas atau quiz yang menunggu penilaian 🎉</div>'}</div><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Tutup</button></div>`);
+}
+function nilaiDariBeranda(mkId, kid) {
+  tutupModal();
+  S.view = 'pert'; S.cid = mkId; S.kid = kid; S.edit = null; S.pfKey = null; S.delMode = false;
+  S.pTab = 'pengumpulan'; S.kTab = 'belum'; S.kJ = ''; S.kN = ''; S.kQ = ''; S.kLim = KPAGE;
+  render(); window.scrollTo(0, 0);
+}
+function berikanPilih(n, em) {
+  const c = ctxKelas(); if (!c) return;
+  const g = gabungBelum(kumpulBelumKirim(c.m, c.k, studentsOf(c.m.id, c.k.id)).filter(i => i.x.n === n && i.u.email === em && i.bisa))[0];
+  if (!g) { toast('Tidak ada yang perlu diselesaikan'); return; }
+  if (g.list.length === 1) { berikanSelesai(n, em, g.list[0].jenis); return; }
+  const opt = i => `<button type="button" class="addopt" style="border:1px solid var(--bd);margin-top:8px" onclick="tutupModal();berikanSelesai(${n},'${esc(em)}','${i.jenis}')"><span class="addic" aria-hidden="true">${i.jenis === 'tugas' ? '📝' : '🧠'}</span><span><b>${i.jenis === 'tugas' ? 'Tugas' : 'Quiz'}</b><small>${i.jenis === 'tugas' ? (i.kb ? 'Dikembalikan, belum dikirim ulang' : 'Belum dikirim') : (i.kb ? 'Dikembalikan, belum dikirim ulang' : 'Belum selesai')}</small></span></button>`;
+  modal(`<h3>Berikan selesai</h3><div class="quote">${esc(g.u.nama)} · ${esc(g.u.id)} · Pertemuan ${n}</div><p style="margin:12px 0 0">Pilih yang mau ditandai selesai:</p>${g.list.map(opt).join('')}<div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button></div>`);
+}
+// Pengajar membatalkan status "selesai" yang dulu ia berikan sendiri (bukan yang ditandai partisipan)
+function batalSelesai(n, i, jenis) {
+  const c = ctxKelas(); if (!c || !KUM[i]) return;
+  const em = KUM[i], u = Auth.find(em), p = P(c.m.id, em), nama = u ? u.nama : 'partisipan';
+  if (jenis === 'tugas') { if (!(p.sub[n] && p.sub[n].manual)) { toast('Tugas ini bukan ditandai oleh pengajar'); return; } }
+  else if (!(p.qext[n] && p.qext[n].oleh)) { toast('Quiz ini bukan ditandai oleh pengajar'); return; }
+  if (!confirm('Batalkan status selesai ' + jenis + ' milik ' + nama + '?\nStatusnya kembali menjadi belum dikirim.')) return;
+  if (jenis === 'tugas') { delete p.sub[n]; delete p.nilai[n]; } else delete p.qext[n];
+  setP(c.m.id, em, p); tutupModal(); toast('Status selesai dibatalkan untuk ' + nama); render();
+}
+function berikanSelesai(n, em, jenis) {
+  const c = ctxKelas(); if (!c) return;
+  const u = Auth.find(em), x = c.k.pert.find(q => q.n === n); if (!u || !x) return;
+  const p = P(c.m.id, em);
+  if (!confirm('Tandai ' + jenis + ' Pertemuan ' + n + ' milik ' + u.nama + ' sebagai selesai?\nPartisipan akan melihat statusnya selesai tanpa berkas.')) return;
+  const now = Date.now();
+  if (jenis === 'tugas') {
+    if (p.sub[n]) { toast('Tugas sudah dikirim'); return; }
+    p.sub[n] = { nama: 'Ditandai selesai oleh pengajar', at: now, items: [], manual: true };
+    p.nilai[n] = { skor: null, cat: '', at: now, manual: true };
+    delete p.kembali[n];
+  } else {
+    if (qeOk(p.qext[n])) { toast('Quiz sudah selesai'); return; }
+    p.qext[n] = { at: now, items: [], oleh: 'pengajar' };
+  }
+  setP(c.m.id, em, p); toast('Ditandai selesai untuk ' + u.nama); render();
+}
+function kumpulList(m, k, ss) {
+  const q = (S.kQ || '').trim().toLowerCase(), nf = S.kN ? +S.kN : 0, jf = S.kJ || '', lim = S.kLim || KPAGE, filt = !!(q || nf || jf);
+  const at = i => subAt(i.f) || 0, items = kumpulItems(m, k, ss);
+  const row = it => {
+    const status = it.gr ? (it.nl ? `<span class="chip c-ok">Dinilai${it.nl.skor != null ? ' · ' + it.nl.skor : ''}</span>` : '<span class="chip c-iz">Perlu dinilai</span>')
+      : `<span class="chip c-ok">Selesai${it.skor != null ? ' · ' + it.skor : ''}</span>`;
+    const lbl = it.jenis === 'tugas' ? '<span class="chip c-tg">Tugas</span>' : '<span class="chip c-bl">Quiz</span>';
+    const ket = it.gr ? (it.nl ? 'Lihat' : 'Nilai') : 'Lihat';
+    return `<div class="pt-row"><div class="pt-who"><b>${esc(it.u.nama)}</b><span>${esc(it.u.id)}</span></div><div class="pt-what"><b>Pertemuan ${it.x.n}</b><span>${esc(it.x.topik)}${at(it) ? ' · ' + (it.gr ? 'dikirim ' : 'selesai ') + fmtDt(at(it)) : ''}</span></div>${lbl}${status}<button class="btn ${it.gr && !it.nl ? 'lime' : 'ghost'} sm" onclick="kumpulModal(${it.x.n},'${it.jenis}','${esc(it.u.email)}')">${ket}</button></div>`;
+  };
+  const lblOf = j => j === 'tugas' ? '<span class="chip c-tg">Tugas</span>' : '<span class="chip c-bl">Quiz</span>';
+  const rowKirim = g => `<div class="pt-row"><div class="pt-who"><b>${esc(g.u.nama)}</b><span>${esc(g.u.id)}</span></div><div class="pt-what"><b>Pertemuan ${g.x.n}</b><span>${esc(g.x.topik)}</span></div><span class="kmp-chips">${g.list.map(it => `<span class="kmp-pair">${lblOf(it.jenis)}<span class="chip c-wait">${it.kb ? 'Dikembalikan' : it.jenis === 'tugas' ? 'Belum dikirim' : 'Belum selesai'}</span></span>`).join('')}</span>${g.list.some(i => i.bisa) ? `<button class="btn lime sm" onclick="berikanPilih(${g.x.n},'${esc(g.u.email)}')">Berikan selesai</button>` : ''}</div>`;
+  const statusOf = it => it.gr ? (it.nl ? `<span class="chip c-ok">Dinilai${it.nl.skor != null ? ' · ' + it.nl.skor : ''}</span>` : '<span class="chip c-iz">Perlu dinilai</span>') : `<span class="chip c-ok">Selesai${it.skor != null ? ' · ' + it.skor : ''}</span>`;
+  const rowSudah = g => `<div class="pt-row"><div class="pt-who"><b>${esc(g.u.nama)}</b><span>${esc(g.u.id)}</span></div><div class="pt-what"><b>Pertemuan ${g.x.n}</b><span>${esc(g.x.topik)}</span></div><span class="kmp-chips">${g.list.map(it => `<span class="kmp-pair">${lblOf(it.jenis)}${statusOf(it)}</span>`).join('')}</span><button class="btn ghost sm" onclick="kumpulModal(${g.x.n},'${[...new Set(g.list.map(i => i.jenis))].join(',')}','${esc(g.u.email)}')">Lihat</button></div>`;
+  const sudahItems = () => items.filter(i => kmpSudah(i) && (!jf || i.jenis === jf) && (!nf || i.x.n === nf) && (!q || `${i.u.nama} ${i.u.id} ${i.x.topik} ${i.jenis}`.toLowerCase().includes(q)));
+  const kirimItems = () => kumpulBelumKirim(m, k, ss).filter(i => (!jf || i.jenis === jf) && (!nf || i.x.n === nf) && (!q || `${i.u.nama} ${i.u.id} ${i.x.topik} ${i.jenis}`.toLowerCase().includes(q)));
+  const rowsFor = tab => {
+    if (tab === 'kirim') return gabungBelum(kirimItems()).map(rowKirim);
+    if (tab === 'sudah') {
+      const g = {};
+      sudahItems().forEach(i => { const key = i.x.n + '|' + i.u.email; (g[key] = g[key] || { x: i.x, u: i.u, list: [], t: 0 }).list.push(i); g[key].t = Math.max(g[key].t, at(i)); });
+      return Object.values(g).sort((a2, b2) => b2.t - a2.t).map(rowSudah);
+    }
+    const belum = true;
+    return items.filter(i => belum === !kmpSudah(i) && (!jf || i.jenis === jf) && (!nf || i.x.n === nf) && (!q || `${i.u.nama} ${i.u.id} ${i.x.topik} ${i.jenis}`.toLowerCase().includes(q)))
+      .sort(belum ? (a2, b2) => at(a2) - at(b2) : (a2, b2) => at(b2) - at(a2)).map(row);
+  };
+  const rows = rowsFor(S.kTab);
+  const kosong = filt ? 'Tidak ada yang cocok di tab ini.' : S.kTab === 'kirim' ? 'Semua partisipan sudah mengirim 🎉' : S.kTab === 'belum' ? 'Tidak ada tugas atau quiz yang menunggu penilaian 🎉' : 'Belum ada tugas atau quiz yang selesai dinilai.';
+  // saat mencari/memfilter: tunjukkan juga tab lain yang punya hasil, supaya tidak mengira datanya tidak ada
+  const lain = filt ? [['belum', 'Belum dinilai'], ['sudah', 'Sudah dinilai'], ['kirim', 'Belum dikirim']].filter(([id]) => id !== S.kTab).map(([id, l]) => [id, l, id === 'kirim' ? kirimItems().length : id === 'sudah' ? sudahItems().length : rowsFor(id).length]).filter(x => x[2]) : [];
+  const hint = lain.length ? `<div class="kmp-hint">Ada juga di: ${lain.map(([id, l, n]) => `<button type="button" onclick="kmpTab('${id}')">${l} (${n})</button>`).join('')}</div>` : '';
+  const shown = rows.slice(0, lim), sisa = rows.length - shown.length;
+  return `<div class="kmp-sum">Menampilkan ${shown.length} dari ${rows.length}${filt ? ' hasil pencarian' : ''}${S.kTab === 'belum' ? ' · yang paling lama menunggu di atas' : ''}${S.kTab === 'kirim' ? ' · diurutkan per pertemuan' : ''}</div>${hint}${shown.join('') || `<div class="pt-empty">${kosong}</div>`}${sisa > 0 ? `<button class="btn ghost kmp-more" onclick="kmpMore()">Tampilkan ${Math.min(KPAGE, sisa)} lagi · sisa ${sisa}</button>` : ''}`;
+}
+function kumpulTab(m, k, ss) {
+  const tg = k.pert.filter(x => x.tugas), qz = k.pert.filter(adaQuiz);
+  if (!tg.length && !qz.length) return '<p class="empty" style="margin-top:16px">Belum ada pertemuan yang memiliki tugas atau quiz.</p>';
+  const items = kumpulItems(m, k, ss), nSudah = items.filter(kmpSudah).length, nBelum = items.length - nSudah;
+  const nKirim = kumpulBelumKirim(m, k, ss).length;
+  if (!['belum', 'sudah', 'kirim'].includes(S.kTab)) S.kTab = nBelum ? 'belum' : nSudah ? 'sudah' : nKirim ? 'kirim' : 'belum';
+  const T = [['belum', '📝', 'Belum dinilai', nBelum], ['sudah', '✅', 'Sudah dinilai', nSudah], ['kirim', '⏳', 'Belum dikirim', nKirim]];
+  const tabs = `<div class="kmp" role="tablist">${T.map(([id, ic, l, n]) => `<button type="button" role="tab" aria-selected="${S.kTab === id}" data-t="${id}" class="kmp-t${S.kTab === id ? ' on' : ''}${id === 'belum' && n ? ' hot' : ''}" onclick="kmpTab('${id}')"><i aria-hidden="true">${ic}</i><span><b>${n}</b>${l}</span></button>`).join('')}</div>`;
+  const opts = k.pert.filter(x => x.tugas || adaQuiz(x)).map(x => `<option value="${x.n}"${+S.kN === x.n ? ' selected' : ''}>Pertemuan ${x.n} · ${esc(x.topik.length > 28 ? x.topik.slice(0, 27) + '…' : x.topik)}</option>`).join('');
+  const jopt = [['', 'Semua jenis'], ['tugas', 'Tugas'], ['quiz', 'Quiz']].map(([v, l]) => `<option value="${v}"${(S.kJ || '') === v ? ' selected' : ''}>${l}</option>`).join('');
+  const bar = `<div class="kmp-bar"><label class="pg-search"><span aria-hidden="true">🔍</span><input id="kmpQ" type="search" placeholder="Cari nama, ID, atau pembahasan…" value="${esc(S.kQ || '')}" oninput="kmpQ(this.value)" autocomplete="off" aria-label="Cari di pengumpulan"></label><select id="kmpJ" onchange="kmpJ(this.value)" aria-label="Filter jenis">${jopt}</select><select id="kmpN" onchange="kmpN(this.value)" aria-label="Filter pertemuan"><option value="">Semua pertemuan</option>${opts}</select></div>`;
+  return `<div class="kmp-sticky">${tabs}${bar}</div><div id="kList">${kumpulList(m, k, ss)}</div>`;
+}
+function kmpApply() { const c = ctxKelas(), box = document.getElementById('kList'); if (c && box) box.innerHTML = kumpulList(c.m, c.k, studentsOf(c.m.id, c.k.id)); }
+function kmpTab(t) {
+  S.kTab = t; S.kLim = KPAGE;
+  document.querySelectorAll('.kmp-t').forEach(b => { const on = b.dataset.t === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  kmpApply();
+}
+function kmpQ(v) { S.kQ = v; S.kLim = KPAGE; kmpApply(); }
+function kmpN(v) { S.kN = v; S.kLim = KPAGE; kmpApply(); }
+function kmpJ(v) { S.kJ = v; S.kLim = KPAGE; kmpApply(); }
+function kmpMore() { S.kLim = (S.kLim || KPAGE) + KPAGE; kmpApply(); }
+// Tab Absensi: pilih pertemuan, lalu partisipan yang belum absen di atas dan yang sudah absen di bawahnya
+function pilihAbsen(n) { S.absN = n; render(); }
+function setAbsenMhs(n, i, v) {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, u = studentsOf(m.id, k.id)[i]; if (!u) return;
+  const p = P(m.id, u.email); if (v) p.att[n] = v; else delete p.att[n]; setP(m.id, u.email, p);
+  toast(`${u.nama}: ${{ H: 'Hadir', I: 'Izin', A: 'Alpa' }[v] || 'Belum diabsen'}`); render();
+}
+function absenTab(m, k, ss) {
+  if (!k.pert.length) return '<p class="empty" style="margin-top:16px">Belum ada pertemuan. Buat pertemuan di tab Pertemuan.</p>';
+  if (!k.pert.some(q => q.n === S.absN)) S.absN = k.pert[k.pert.length - 1].n;
+  const n = S.absN, x = k.pert.find(q => q.n === n);
+  const info = x.absen && x.absen.dur > 0 ? (absenOpen(x) ? `Absen mandiri dibuka · sisa ${cd(x)}` : `Absen mandiri ditutup (${x.absen.dur} mnt)`) : 'Tanpa absen mandiri';
+  const pick = `<div class="pt-pick"><span class="pt-lbl">Pertemuan</span>${k.pert.map(q => `<button type="button" class="pt-chip${q.n === n ? ' on' : ''}" title="${esc(q.topik)}" aria-pressed="${q.n === n}" onclick="pilihAbsen(${q.n})">${q.n}</button>`).join('')}</div><div class="quote" style="margin-top:2px"><b>${esc(x.topik)}</b> · ${info}</div>`;
+  if (!ss.length) return pick + '<p class="empty" style="margin-top:12px">Belum ada partisipan yang bergabung.</p>';
+  const opt = [['', 'Belum diabsen'], ['H', 'Hadir'], ['I', 'Izin'], ['A', 'Alpa']], cls = { H: 'c-ok', I: 'c-iz', A: 'c-no' }, nm = { H: 'Hadir', I: 'Izin', A: 'Alpa' };
+  const all = ss.map((u, i) => ({ u, i, cur: P(m.id, u.email).att[n] || '' }));
+  const row = r => `<div class="pt-row"><div class="pt-who"><b>${esc(r.u.nama)}</b><span>${esc(r.u.id)}</span></div>${r.cur ? `<span class="chip ${cls[r.cur]}">${nm[r.cur]}</span>` : ''}<select class="pt-sel" onchange="setAbsenMhs(${n},${r.i},this.value)" aria-label="Absensi ${esc(r.u.nama)}">${opt.map(([v, l]) => `<option value="${v}"${r.cur === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
+  const belum = all.filter(r => !r.cur), sudah = all.filter(r => r.cur);
+  return pick + `<h2>Partisipan yang belum absen (${belum.length})</h2>${belum.map(row).join('') || '<div class="pt-empty">Semua partisipan sudah absen 🎉</div>'}<h2>Partisipan yang sudah absen (${sudah.length})</h2>${sudah.map(row).join('') || '<div class="pt-empty">Belum ada partisipan yang absen.</div>'}`;
+}
 function pertPage() {
   const c = ctxKelas(); if (!c) { S.view = 'courses'; return coursesPage(); }
-  const { m, k } = c, ss = studentsOf(m.id, k.id), e = S.edit ? k.pert.find(x => x.n === S.edit) : null;
-  const list = k.pert.map(x => {
+  const { m, k } = c, ss = studentsOf(m.id, k.id), e = S.edit ? k.pert.find(x => x.n === S.edit) : null, dm = !!S.delMode && !e;
+  const list = k.pert.map((x, idx) => {
     const ab = x.absen && x.absen.dur > 0 ? (absenOpen(x) ? `Absen dibuka · sisa ${cd(x)}` : `Absen mandiri ditutup (${x.absen.dur} mnt)`) : 'Tanpa absen mandiri';
     const kt = x.tugas ? `Tugas ${ss.filter(u => P(m.id, u.email).sub[x.n]).length}/${ss.length} terkumpul` : '', kq = adaQuiz(x) ? `Quiz ${ss.filter(u => quizDone(P(m.id, u.email), x)).length}/${ss.length} selesai` : '';
-    return `<div class="mt"><div class="prow"><div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${[ab, matOf(x).length ? 'Materi ' + matOf(x).length : '', kt, kq].filter(Boolean).join(' · ')}</small></div>${x.tugas || adaQuiz(x) ? `<button class="btn ghost" onclick="kumpulModal(${x.n})">Pengumpulan</button>` : ''}<button class="btn ghost" onclick="absenModal(${x.n})">Absensi</button><button class="btn ghost" onclick="editPert(${x.n})">Edit</button></div></div>`;
+    return `<div class="mt"><div class="prow">${dm ? `<button class="delx" style="--i:${idx}" onclick="hapusPertModal(${x.n})" aria-label="Hapus pertemuan ${x.n}" title="Hapus pertemuan ${x.n}">✕</button>` : ''}<div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${[ab, matOf(x).length ? 'Materi ' + matOf(x).length : '', kt, kq].filter(Boolean).join(' · ')}</small></div><button class="btn ghost" onclick="editPert(${x.n})">Edit</button></div></div>`;
   }).join('') || '<p class="empty">Belum ada pertemuan. Tambahkan pertemuan pertama di bawah.</p>';
-  const del = k.pert.length && !e ? '<button class="btn ghost" style="margin-top:4px" onclick="delPert()">Hapus pertemuan terakhir</button>' : '';
-  const head2 = `<button class="back" onclick="bukaKelas('${k.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(k.nama)}</button>${hdr(m, 'Pertemuan · ' + esc(k.nama) + ' · ' + ss.length + ' partisipan')}<h2>Daftar pertemuan</h2>`;
-  if (!e && k.pert.length >= TOTAL) return head2 + list + del + '<p class="empty" style="margin-top:14px">Semua 16 pertemuan kelas ini sudah dibuat.</p>';
+  // Tombol hapus ikut di dalam kotak daftar pertemuan: "Hapus pertemuan sebelumnya" -> muncul ✕ di tiap nomor + tombol "Batal"
+  const foot = k.pert.length && !e ? `<div class="pfoot">${dm ? '<button class="btn ghost" onclick="modeHapus(false)">Batal</button><span class="quote" style="margin:0">Tekan ✕ di samping nomor pertemuan yang ingin dihapus.</span>' : '<button class="btn red" onclick="modeHapus(true)">Hapus pertemuan sebelumnya</button>'}</div>` : '';
+  const box = `<div class="card plist${dm ? ' dm' : ''}">${list}${foot}</div>`;
+  const tab = S.pTab || 'pertemuan';
+  const nBelum = kumpulItems(m, k, ss).filter(i => i.gr && !i.nl).length;
+  const tabs = `<div class="pt-tabs" role="tablist">${[['pertemuan', 'Pertemuan'], ['pengumpulan', 'Pengumpulan'], ['absensi', 'Absensi']].map(([id, l]) => `<button type="button" role="tab" aria-selected="${tab === id}" class="pt-tab${tab === id ? ' on' : ''}" onclick="pTab('${id}')">${l}${id === 'pengumpulan' && nBelum ? `<span class="pt-bdg" title="${nBelum} tugas perlu dinilai">${nBelum}</span>` : ''}</button>`).join('')}</div>`;
+  const top = `<button class="back" onclick="bukaKelas('${k.id}')"><span class="arr" aria-hidden="true">←</span> Kembali ke ${esc(k.nama)}</button>${hdr(m, hl('Kelas', esc(k.nama)))}${tabs}`;
+  if (tab === 'pengumpulan') return top + kumpulTab(m, k, ss);
+  if (tab === 'absensi') return top + absenTab(m, k, ss);
+  const head2 = top + '<h2>Daftar pertemuan</h2>';
+  if (!e && k.pert.length >= TOTAL) return head2 + box + '<p class="empty" style="margin-top:14px">Semua 16 pertemuan kelas ini sudah dibuat.</p>';
   pfInit(k, e);
   const v = e || { topik: '', tugas: '', quiz: [], tugasDl: null, quizDl: null }, dur = e ? (e.absen ? e.absen.dur : 0) : 5;
-  const adaQ = e ? adaQuiz(e) : false, tg = box => `onchange="document.getElementById('${box}').hidden=!this.checked"`;
-  const dlBox = (chk, box, inp, ts) => `<label class="chk"><input type="checkbox" id="${chk}" ${ts ? 'checked' : ''} ${tg(box)}> Pakai batas waktu</label><div id="${box}" ${ts ? '' : 'hidden'}><label class="f">Batas (tanggal & jam)<input type="datetime-local" id="${inp}" value="${ts ? localIn(ts) : ''}"></label></div>`;
-  return head2 + list + del + `<div class="card" id="pForm" style="margin-top:16px"><b>${e ? 'Edit pertemuan ' + e.n : 'Tambah pertemuan ' + (k.pert.length + 1)} · ${esc(k.nama)}</b>
-  <div class="fg" style="margin-top:10px"><label class="f">Topik<input id="pTopik" maxlength="80" value="${esc(v.topik)}"></label>
-  <label class="f">Batas absen mandiri (menit) — partisipan bisa absen sendiri selama waktu ini. Isi 0 jika pengajar yang mengabsen.<input id="pDur" type="number" min="0" max="180" value="${dur}"></label>
+  const adaQ = e ? adaQuiz(e) : false, tg = box2 => `onchange="document.getElementById('${box2}').hidden=!this.checked"`;
+  const dlBox = (chk, box2, inp, ts) => `<label class="chk"><input type="checkbox" id="${chk}" ${ts ? 'checked' : ''} ${tg(box2)}> Pakai batas waktu</label><div id="${box2}" ${ts ? '' : 'hidden'}><label class="f">Batas (tanggal & jam)<input type="datetime-local" id="${inp}" value="${ts ? localIn(ts) : ''}"></label></div>`;
+  return head2 + box + `<h2>${e ? 'Edit pertemuan' : 'Tambah pertemuan'}</h2><div class="card" id="pForm"><b>${e ? 'Pertemuan ' + e.n : 'Selanjutnya pertemuan ' + (k.pert.length + 1)}</b>
+  <div class="fg" style="margin-top:10px"><label class="f">Judul pembahasan<input id="pTopik" maxlength="80" value="${esc(v.topik)}"></label>
+  <label class="f">Atur berapa menit batas absen (isi 0 jika pengajar yang mengabsen)<input id="pDur" type="number" min="0" max="180" value="${dur}"></label>
   ${e ? '<label class="chk"><input type="checkbox" id="pReopen"> Buka ulang absen sekarang (hitung mundur mulai dari sekarang)</label>' : ''}
   <div class="quote" style="margin:4px 0 0"><b>Opsi pertemuan</b> (centang yang dipakai)</div>
   <label class="chk"><input type="checkbox" id="uMateri" ${S.pf.mat.length ? 'checked' : ''} ${tg('bMateri')}> Materi (maks. 5 file atau link)</label>
-  <div id="bMateri" class="blk" ${S.pf.mat.length ? '' : 'hidden'}>${lampEditor('mat')}</div>
+  <div id="bMateri" class="blk" ${S.pf.mat.length ? '' : 'hidden'}><div class="fg"><label class="f">Deskripsi materi<textarea id="pMatDesc" rows="2" maxlength="300">${esc(v.materiDesc || '')}</textarea></label>${lampEditor('mat')}</div></div>
   <label class="chk"><input type="checkbox" id="uTugas" ${v.tugas ? 'checked' : ''} ${tg('bTugas')}> Tugas (muncul di partisipan sebagai tugas yang harus diselesaikan)</label>
-  <div id="bTugas" class="blk" ${v.tugas ? '' : 'hidden'}><div class="fg"><label class="f">Deskripsi / instruksi tugas<textarea id="pTugas" rows="2" maxlength="300">${esc(v.tugas)}</textarea></label>
+  <div id="bTugas" class="blk" ${v.tugas ? '' : 'hidden'}><div class="fg"><label class="f">Deskripsi tugas<textarea id="pTugas" rows="2" maxlength="300">${esc(v.tugas)}</textarea></label>
   ${lampEditor('tl')}${dlBox('uTgDl', 'bTgDl', 'pTgDl', v.tugasDl)}</div></div>
   <label class="chk"><input type="checkbox" id="uQuiz" ${adaQ ? 'checked' : ''} ${tg('bQuiz')}> Quiz (muncul di partisipan sebagai quiz yang perlu dikerjakan)</label>
-  <div id="bQuiz" class="blk" ${adaQ ? '' : 'hidden'}><div class="fg"><div class="quote">Quiz bisa berupa <b>soal di sini</b>, <b>link / file</b> (mis. Google Form atau berkas soal), atau keduanya. Untuk link/file, partisipan bisa menandai selesai atau mengirim hasil pengerjaannya.</div>
-  ${lampEditor('ql')}
-  <label class="f">Soal pilihan ganda (opsional) — satu soal per baris: <code>Soal | Opsi A | Opsi B | Opsi C | nomor jawaban benar</code><textarea id="pQuiz" rows="4" placeholder="Apa itu enkapsulasi? | Menyembunyikan data | Mewarisi kelas | Membuat objek | 1">${esc(qzText(v.quiz))}</textarea></label>${dlBox('uQzDl', 'bQzDl', 'pQzDl', v.quizDl)}</div></div>
+  <div id="bQuiz" class="blk" ${adaQ ? '' : 'hidden'}><div class="fg"><div class="quote">Quiz berupa <b>link atau file</b> (mis. Google Form atau berkas soal). Partisipan bisa menandai selesai atau mengirim hasil pengerjaannya.</div>
+  <label class="f">Deskripsi quiz<textarea id="pQuizDesc" rows="2" maxlength="300">${esc(v.quizDesc || '')}</textarea></label>
+  ${lampEditor('ql')}${dlBox('uQzDl', 'bQzDl', 'pQzDl', v.quizDl)}</div></div>
   <p class="err" id="pErr" role="alert"></p>
   <div class="row"><button class="btn lime" onclick="savePert()">${e ? 'Simpan perubahan' : 'Tambah pertemuan'}</button>${e ? '<button class="btn ghost" onclick="S.edit=null;S.pfKey=null;render()">Batal</button>' : ''}</div></div></div>`;
 }
@@ -952,7 +1195,7 @@ function parseQuiz(txt) {
   }
   return out;
 }
-function editPert(n) { S.edit = n; render(); const f = document.getElementById('pForm'); if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth' }); }
+function editPert(n) { S.edit = n; S.pTab = 'pertemuan'; render(); const f = document.getElementById('pForm'); if (f && f.scrollIntoView) f.scrollIntoView({ behavior: 'smooth' }); }
 async function savePert() {
   if (BUSY) return; BUSY = true;
   try { await savePert0(); } finally { BUSY = false; }
@@ -961,10 +1204,10 @@ async function savePert0() {
   const c = ctxKelas(); if (!c || !S.pf) return;
   const { m, k } = c, e = $('#pErr'), old = S.edit ? k.pert.find(x => x.n === S.edit) : null, topik = $('#pTopik').value.trim();
   const fail = t => { e.textContent = t; };
-  if (!topik) return fail('Topik wajib diisi.');
+  if (!topik) return fail('Judul pembahasan wajib diisi.');
   const dur = parseInt($('#pDur').value, 10);
   if (!(dur >= 0 && dur <= 180)) return fail('Batas absen harus 0–180 menit.');
-  let tugas = '', qz = [], materi = [], tugasLamp = [], quizLamp = [], tugasDl = null, quizDl = null;
+  let tugas = '', qz = [], materi = [], materiDesc = '', quizDesc = '', tugasLamp = [], quizLamp = [], tugasDl = null, quizDl = null;
   const dl = (chk, inp, prev, nama) => {
     if (!$(chk).checked) return null;
     const t = new Date($(inp).value).getTime();
@@ -973,16 +1216,15 @@ async function savePert0() {
     return t;
   };
   try {
-    if ($('#uMateri').checked) { materi = S.pf.mat.slice(); if (!materi.length) return fail('Tambahkan minimal satu materi (file atau link), atau hilangkan centang Materi.'); }
+    if ($('#uMateri').checked) { materi = S.pf.mat.slice(); materiDesc = $('#pMatDesc').value.trim(); if (!materi.length) return fail('Tambahkan minimal satu materi (file atau link), atau hilangkan centang Materi.'); }
     if ($('#uTugas').checked) {
       tugas = $('#pTugas').value.trim(); if (!tugas) return fail('Isi deskripsi tugas, atau hilangkan centang Tugas.');
       tugasLamp = S.pf.tl.slice(); tugasDl = dl('#uTgDl', '#pTgDl', old && old.tugasDl, 'tugas');
     }
     if ($('#uQuiz').checked) {
-      const q = parseQuiz($('#pQuiz').value);
-      if (typeof q === 'string') return fail(q);
-      qz = q; quizLamp = S.pf.ql.slice();
-      if (!qz.length && !quizLamp.length) return fail('Isi soal quiz atau tambahkan link/file quiz, atau hilangkan centang Quiz.');
+      qz = old && old.quiz ? old.quiz : [];   // soal pilihan ganda lama (jika ada) tetap dipertahankan
+      quizLamp = S.pf.ql.slice(); quizDesc = $('#pQuizDesc').value.trim();
+      if (!qz.length && !quizLamp.length) return fail('Tambahkan link atau file quiz, atau hilangkan centang Quiz.');
       quizDl = dl('#uQzDl', '#pQzDl', old && old.quizDl, 'quiz');
     }
   } catch (err) { return fail(err.message); }
@@ -991,23 +1233,48 @@ async function savePert0() {
   } catch (err) { return fail('Gagal mengunggah berkas: ' + ((err && err.message) || err)); }
   const reopen = old ? $('#pReopen').checked : true;
   const absen = { dur, start: old && old.absen && !reopen ? old.absen.start : Date.now() };
-  const data = { topik, tugas, tugasLamp, tugasDl, quiz: qz, quizLamp, quizDl, materi, absen };
+  const data = { topik, tugas, tugasLamp, tugasDl, quiz: qz, quizLamp, quizDl, materi, materiDesc, quizDesc, absen };
   if (old) { Object.assign(old, data); delete old.tugasFile; } else k.pert.push({ n: k.pert.length + 1, ...data });
   if (!saveMk(m)) return fail('Gagal menyimpan data.');
   const msg = old ? 'Pertemuan ' + old.n + ' diperbarui' : 'Pertemuan ' + k.pert.length + ' ditambahkan';
   S.edit = null; S.pfKey = null; S.pf = null; render(); toast(msg);
 }
-function delPert() {
-  const c = ctxKelas(); if (!c) return;
-  if (!confirm('Hapus pertemuan terakhir beserta absen, tugas, dan nilai quiz-nya?')) return;
-  const { m, k } = c, n = k.pert.length; k.pert.pop(); saveMk(m);
+function modeHapus(on) { S.delMode = !!on; render(); }
+function hapusPertModal(n) {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c, x = k.pert.find(q => q.n === n); if (!x) return;
+  const jml = studentsOf(m.id, k.id).length, sesudah = k.pert.filter(q => q.n > n).length;
+  modal(`<h3>⚠️ Hapus pertemuan ${n}?</h3><div class="quote">${esc(x.topik)} · ${esc(k.nama)}</div><div class="warnbox" ${merah}>Tindakan ini <b>tidak bisa dibatalkan</b>.</div>
+  <ul class="dampak"><li>Materi, tugas, dan quiz di pertemuan ini ikut terhapus.</li>
+  <li>Absen, tugas yang dikirim, nilai, dan hasil quiz <b>${jml} partisipan</b> di pertemuan ini ikut terhapus.</li>
+  ${sesudah ? `<li>${sesudah} pertemuan setelahnya otomatis bergeser nomornya (pertemuan ${n + 1} menjadi pertemuan ${n}, dan seterusnya).</li>` : ''}</ul>
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusPert(${n})">Ya, hapus pertemuan ${n}</button></div>`);
+}
+function hapusPert(n) {
+  const c = ctxKelas(); if (!c) return; const { m, k } = c;
+  if (!k.pert.some(x => x.n === n)) { tutupModal(); return; }
+  k.pert = k.pert.filter(x => x.n !== n); k.pert.forEach(x => { if (x.n > n) x.n--; });
+  saveMk(m);
+  // data partisipan per nomor pertemuan: hapus nomor ini, geser nomor sesudahnya
   const a = st.pr(), d = a[m.id] || {};
-  studentsOf(m.id, k.id).forEach(u => { const v = d[u.email]; if (v) ['att', 'sub', 'quiz', 'qt', 'nilai', 'qext', 'kembali'].forEach(f => { if (v[f]) delete v[f][n]; }); });
-  st.setPr(a); render();
+  studentsOf(m.id, k.id).forEach(u => {
+    const v = d[u.email]; if (!v) return;
+    ['att', 'sub', 'quiz', 'qt', 'nilai', 'qext', 'kembali'].forEach(f => {
+      const o = v[f]; if (!o) return; const nw = {};
+      Object.keys(o).forEach(key => { const i = +key; if (i < n) nw[key] = o[key]; else if (i > n) nw[i - 1] = o[key]; });
+      v[f] = nw;
+    });
+  });
+  st.setPr(a);
+  Object.keys(S.open).forEach(key => { if (key.startsWith(m.id + '-')) delete S.open[key]; });
+  S.delMode = false; S.edit = null; S.pfKey = null; tutupModal(); render(); toast('Pertemuan ' + n + ' dihapus');
 }
 // Pengumpulan: siapa saja yang sudah mengirim tugas / mengerjakan quiz
-let KUM = [], PVJ = 0;
-function kumpulModal(n) {
+let KUM = [], PVJ = 0, KFOC = null;
+const kfJ = j => !KFOC || String(KFOC.jenis).split(',').includes(j);
+// kumpulModal(n, jenis, email): jika jenis & email diisi, hanya tugas ATAU quiz milik satu partisipan itu yang ditampilkan
+function kumpulBack(n) { kumpulModal(n, KFOC && KFOC.jenis, KFOC && KFOC.em); }
+function kumpulModal(n, jenis, em) {
+  KFOC = jenis ? { jenis, em } : null;
   freePv();
   const c = ctxKelas(); if (!c) return;
   const { m, k } = c, x = k.pert.find(q => q.n === n), ss = studentsOf(m.id, k.id); KUM = ss.map(u => u.email);
@@ -1019,25 +1286,37 @@ function kumpulModal(n) {
   let h = `<h3>Pengumpulan · Pertemuan ${n}</h3><div class="quote">${esc(x.topik)} · ${esc(k.nama)}</div>`;
   if (!ss.length) h += '<p class="empty">Belum ada partisipan yang bergabung.</p>';
   else {
-    if (x.tugas) {
+    if (x.tugas && kfJ('tugas')) {
       const sent = ss.filter(u => P(m.id, u.email).sub[n]).length, graded = ss.filter(u => P(m.id, u.email).nilai[n]).length;
-      h += `<h4 style="margin:16px 0 4px">Tugas · ${sent}/${ss.length} sudah mengirim · ${graded} dinilai ${dlChip(x.tugasDl)}</h4>` + ss.map((u, i) => {
+      h += `<h4 style="margin:16px 0 4px">${KFOC ? 'Tugas' : `Tugas · ${sent}/${ss.length} sudah mengirim · ${graded} dinilai`} ${dlChip(x.tugasDl)}</h4>` + ss.map((u, i) => {
+        if (KFOC && KFOC.em !== u.email) return '';
         const p = P(m.id, u.email), f = p.sub[n], nl = p.nilai[n];
         if (!f) return nama(u, p.kembali[n] ? '<span class="chip c-iz">Dikembalikan</span>' : '<span class="chip c-wait">Belum mengirim</span>', p.kembali[n] ? '<div class="quote" style="margin-top:6px">Menunggu dikirim ulang</div>' : '');
+        if (f.manual) return nama(u, '<span class="chip c-ok">Selesai</span>', `<div class="quote" style="margin-top:6px">Ditandai selesai oleh pengajar ${fmtDt(f.at)}</div><div class="row" style="margin-top:10px"><button class="btn red sm" onclick="batalSelesai(${n},${i},'tugas')">↩ Batalkan selesai</button></div>`);
         const its = itemsOf(f);
         return nama(u, nl ? `<span class="chip c-ok">Sudah dinilai${nl.skor != null ? ' · ' + nl.skor : ''}</span>` : '<span class="chip c-iz">Perlu dinilai</span>',
           `${subAt(f) ? `<div class="quote" style="margin-top:6px">Dikirim ${fmtDt(subAt(f))} · ${its.length} lampiran</div>` : ''}${its.length ? lampRows(its, i, 'sub') : '<div class="kf"><span class="quote">Berkas lama tidak tersimpan. Partisipan sudah diminta mengirim ulang.</span></div>'}
         <div class="kn"><input id="nl-${i}" type="number" min="0" max="100" placeholder="Nilai 0–100 (boleh kosong)" value="${nl && nl.skor != null ? nl.skor : ''}" aria-label="Nilai ${esc(u.nama)}"><input id="ct-${i}" placeholder="Catatan (opsional)" maxlength="120" value="${nl ? esc(nl.cat || '') : ''}" aria-label="Catatan untuk ${esc(u.nama)}"><button class="btn lime sm" onclick="simpanNilai(${n},${i})">${nl ? 'Perbarui' : 'Simpan penilaian'}</button><button class="btn ghost sm" onclick="kembalikan(${n},${i})">↩ Kembalikan</button></div>`);
       }).join('');
     }
-    if (adaQuiz(x)) {
+    if (adaQuiz(x) && kfJ('quiz')) {
       const done = ss.filter(u => quizDone(P(m.id, u.email), x)).length;
-      h += `<h4 style="margin:16px 0 4px">Quiz · ${done}/${ss.length} selesai ${dlChip(x.quizDl)}</h4>` + ss.map((u, i) => {
-        const p = P(m.id, u.email), qe = p.qext[n], chips = [];
+      h += `<h4 style="margin:16px 0 4px">${KFOC ? 'Quiz' : `Quiz · ${done}/${ss.length} selesai`} ${dlChip(x.quizDl)}</h4>` + ss.map((u, i) => {
+        if (KFOC && KFOC.em !== u.email) return '';
+        const p = P(m.id, u.email), qe0 = p.qext[n], qe = qeOk(qe0) ? qe0 : null, chips = [];
         if (x.quiz.length) chips.push(p.quiz[n] != null ? `<span class="chip c-bl">Nilai ${p.quiz[n]}</span>` : '<span class="chip c-wait">Soal belum dikerjakan</span>');
         let extra = '';
         if (qlOf(x).length) {
-          if (qe) { const its = itemsOf(qe); chips.push('<span class="chip c-ok">Selesai</span>'); extra = `<div class="quote" style="margin-top:6px">${its.length ? 'Hasil dikirim ' : 'Ditandai selesai '}${fmtDt(qe.at)}${its.length ? ' · ' + its.length + ' lampiran' : ''}</div>${lampRows(its, i, 'qx')}`; }
+          if (qe) {
+            const its = itemsOf(qe), nl = qe.nilai;
+            if (its.length) {
+              chips.push(nl ? `<span class="chip c-ok">Sudah dinilai${nl.skor != null ? ' · ' + nl.skor : ''}</span>` : '<span class="chip c-iz">Perlu dinilai</span>');
+              extra = `<div class="quote" style="margin-top:6px">Hasil dikirim ${fmtDt(qe.at)} · ${its.length} lampiran</div>${lampRows(its, i, 'qx')}${gradeUI(n, i, nl, 'qx')}`;
+            } else {
+              chips.push('<span class="chip c-ok">Selesai</span>');
+              extra = `<div class="quote" style="margin-top:6px">Ditandai selesai ${qe.oleh ? 'oleh pengajar ' : ''}${fmtDt(qe.at)}</div>${qe.oleh ? `<div class="row" style="margin-top:10px"><button class="btn red sm" onclick="batalSelesai(${n},${i},'quiz')">↩ Batalkan selesai</button></div>` : ''}`;
+            }
+          } else if (qe0 && qe0.kembali) { chips.push('<span class="chip c-iz">Dikembalikan</span>'); extra = '<div class="quote" style="margin-top:6px">Menunggu dikirim ulang</div>'; }
           else chips.push('<span class="chip c-wait">Belum selesai</span>');
         }
         return nama(u, chips.join(' '), extra);
@@ -1049,14 +1328,14 @@ function kumpulModal(n) {
 async function lihatTugas(n, i, j, kind) {
   j = j || 0; PVJ = j; kind = kind || 'sub';
   const c = ctxKelas(); if (!c || !KUM[i]) return;
-  const { m } = c, u = Auth.find(KUM[i]), p = P(m.id, KUM[i]), fld = kind === 'qx' ? p.qext[n] : p.sub[n], nl = p.nilai[n], its = itemsOf(fld), it0 = its[j];
+  const { m } = c, u = Auth.find(KUM[i]), p = P(m.id, KUM[i]), fld = kind === 'qx' ? p.qext[n] : p.sub[n], nl = kind === 'qx' ? (fld && fld.nilai) : p.nilai[n], its = itemsOf(fld), it0 = its[j];
   if (!it0 || it0.tipe === 'link') { toast('Berkas tidak tersimpan'); return; }
   let it; try { it = await withData(it0); } catch (e) { toast('Berkas tidak bisa dibuka'); return; }
   freePv();
   const tabs = its.length > 1 ? `<div class="row" style="margin-top:10px">${its.map((q, jj) => `<button class="btn ${jj === j ? '' : 'ghost'} sm" onclick="${q.tipe === 'link' ? `bukaLinkTugas(${n},${i},${jj},'${kind}')` : `lihatTugas(${n},${i},${jj},'${kind}')`}">${q.tipe === 'link' ? '🔗 Link' : '📄 ' + esc(q.nama.length > 22 ? q.nama.slice(0, 20) + '…' : q.nama)}</button>`).join('')}</div>` : '';
-  const ctrl = kind === 'qx' ? `<div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j},'qx')">Unduh</button></div>`
+  const ctrl = kind === 'qx' ? gradeUI(n, i, nl, 'qx', true, j)
     : `<div class="kn" style="margin-top:12px"><input id="nl-${i}" type="number" min="0" max="100" placeholder="Nilai 0–100 (boleh kosong)" value="${nl && nl.skor != null ? nl.skor : ''}" aria-label="Nilai ${esc(u.nama)}"><input id="ct-${i}" placeholder="Catatan (opsional)" maxlength="120" value="${nl ? esc(nl.cat || '') : ''}" aria-label="Catatan untuk ${esc(u.nama)}"><button class="btn lime sm" onclick="simpanNilai(${n},${i},true)">${nl ? 'Perbarui' : 'Simpan penilaian'}</button><button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j})">Unduh</button><button class="btn ghost sm" onclick="kembalikan(${n},${i},true)">↩ Kembalikan</button></div>`;
-  modal(`<button class="btn ghost" onclick="kumpulModal(${n})">← Kembali ke daftar pengumpulan</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${esc(u.nama)} · ${esc(u.id)}${subAt(fld) ? ' · ' + fmtDt(subAt(fld)) : ''}${kind === 'qx' && fld && fld.at ? ' · ' + fmtDt(fld.at) : ''}</div>${tabs}
+  modal(`<button class="btn ghost" onclick="kumpulBack(${n})">← Kembali ke daftar pengumpulan</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${esc(u.nama)} · ${esc(u.id)}${subAt(fld) ? ' · ' + fmtDt(subAt(fld)) : ''}${kind === 'qx' && fld && fld.at ? ' · ' + fmtDt(fld.at) : ''}</div>${tabs}
   ${previewHtml(it)}${ctrl}`, 'wide');
 }
 async function unduhTugas(n, i, j, kind) {
@@ -1070,26 +1349,46 @@ function bukaLinkTugas(n, i, j, kind) {
   const p = P(c.m.id, KUM[i]), it = itemsOf(kind === 'qx' ? p.qext[n] : p.sub[n])[j || 0];
   if (it && it.tipe === 'link') bukaLink(it.url);
 }
-function kembalikan(n, i, pv) {
+// Kolom nilai + catatan + tombol untuk hasil quiz (kind 'qx'), sama seperti penilaian tugas
+function gradeUI(n, i, nl, kind, pv, j) {
+  const pf = kind === 'qx' ? 'q' : '', u = Auth.find(KUM[i]), nm = u ? esc(u.nama) : '', kd = kind || 'sub';
+  return `<div class="kn"${pv ? ' style="margin-top:12px"' : ''}><input id="${pf}nl-${i}" type="number" min="0" max="100" placeholder="Nilai 0–100 (boleh kosong)" value="${nl && nl.skor != null ? nl.skor : ''}" aria-label="Nilai ${nm}"><input id="${pf}ct-${i}" placeholder="Catatan (opsional)" maxlength="120" value="${nl ? esc(nl.cat || '') : ''}" aria-label="Catatan untuk ${nm}"><button class="btn lime sm" onclick="simpanNilai(${n},${i},${!!pv},'${kd}')">${nl ? 'Perbarui' : 'Simpan penilaian'}</button>${pv ? `<button class="btn ghost sm" onclick="unduhTugas(${n},${i},${j || 0},'${kd}')">Unduh</button>` : ''}<button class="btn ghost sm" onclick="kembalikan(${n},${i},${!!pv},'${kd}')">↩ Kembalikan</button></div>`;
+}
+function kembalikan(n, i, pv, kind) {
   const c = ctxKelas(); if (!c || !KUM[i]) return;
-  const em = KUM[i], u = Auth.find(em), p = P(c.m.id, em), f = p.sub[n], nama = u ? u.nama : 'partisipan';
-  if (!f) { toast('Partisipan belum mengirim tugas'); return; }
-  if (!confirm('Kembalikan tugas ' + nama + '?\nBerkas yang sudah dikirim dihapus dan nilainya dibatalkan, lalu partisipan bisa mengirim ulang.\nIsi kolom Catatan dulu kalau ingin memberi alasan.')) return;
-  const ct = document.getElementById('ct-' + i);
-  p.kembali[n] = { cat: ct ? ct.value.trim() : '', lama: subName(f), at: Date.now() };
-  delete p.sub[n]; delete p.nilai[n]; setP(c.m.id, em, p);
-  toast('Tugas dikembalikan ke ' + nama); render(); kumpulModal(n);
+  const q = kind === 'qx', em = KUM[i], u = Auth.find(em), p = P(c.m.id, em), f = q ? p.qext[n] : p.sub[n], nama = u ? u.nama : 'partisipan';
+  if (q ? !(qeOk(f) && itemsOf(f).length) : !f) { toast(q ? 'Partisipan belum mengirim hasil quiz' : 'Partisipan belum mengirim tugas'); return; }
+  if (!confirm((q ? 'Kembalikan hasil quiz ' : 'Kembalikan tugas ') + nama + '?\nBerkas yang sudah dikirim dihapus dan nilainya dibatalkan, lalu partisipan bisa mengirim ulang.\nIsi kolom Catatan dulu kalau ingin memberi alasan.')) return;
+  const ct = document.getElementById((q ? 'q' : '') + 'ct-' + i), cat = ct ? ct.value.trim() : '';
+  if (q) {
+    const its = itemsOf(f), a0 = its[0];
+    p.qext[n] = { kembali: { cat, lama: a0 ? (a0.tipe === 'link' ? a0.url : a0.nama) + (its.length > 1 ? ' (+' + (its.length - 1) + ' lainnya)' : '') : '', at: Date.now() } };
+  } else {
+    p.kembali[n] = { cat, lama: subName(f), at: Date.now() };
+    delete p.sub[n]; delete p.nilai[n];
+  }
+  setP(c.m.id, em, p);
+  toast((q ? 'Hasil quiz' : 'Tugas') + ' dikembalikan ke ' + nama); render(); kumpulBack(n);
 }
 // Pengajar memberi nilai (0–100, boleh dikosongkan = hanya ditandai "sudah dinilai") dan catatan
-function simpanNilai(n, i, pv) {
+function simpanNilai(n, i, pv, kind) {
   const c = ctxKelas(); if (!c || !KUM[i]) return;
-  const raw = document.getElementById('nl-' + i).value.trim(), cat = document.getElementById('ct-' + i).value.trim();
+  const q = kind === 'qx', pf = q ? 'q' : '';
+  const raw = document.getElementById(pf + 'nl-' + i).value.trim(), cat = document.getElementById(pf + 'ct-' + i).value.trim();
   let skor = null;
   if (raw !== '') { skor = Number(raw); if (!(skor >= 0 && skor <= 100)) { toast('Nilai harus antara 0 dan 100'); return; } skor = Math.round(skor * 10) / 10; }
   const p = P(c.m.id, KUM[i]);
-  if (!p.sub[n]) { toast('Partisipan belum mengirim tugas'); return; }
-  p.nilai[n] = { skor, cat, at: Date.now() }; setP(c.m.id, KUM[i], p);
-  toast('Penilaian disimpan'); render(); if (pv) lihatTugas(n, i, PVJ); else kumpulModal(n);
+  let baru = false;   // true = penilaian pertama (dari tab Belum dinilai) -> jendela ditutup otomatis
+  if (q) {
+    const qe = p.qext[n];
+    if (!(qeOk(qe) && itemsOf(qe).length)) { toast('Partisipan belum mengirim hasil quiz'); return; }
+    baru = !qe.nilai; qe.nilai = { skor, cat, at: Date.now() };
+  } else {
+    if (!p.sub[n]) { toast('Partisipan belum mengirim tugas'); return; }
+    baru = !p.nilai[n]; p.nilai[n] = { skor, cat, at: Date.now() };
+  }
+  setP(c.m.id, KUM[i], p);
+  toast('Penilaian disimpan'); render(); if (baru) { tutupModal(); return; } if (pv) lihatTugas(n, i, PVJ, q ? 'qx' : 'sub'); else kumpulBack(n);
 }
 let ABS = [];
 function absenModal(n) {
@@ -1396,6 +1695,9 @@ function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
 function initBeranda() {
   initPcTip();
+  const tutupMenu = () => { const k = S.pfMenu; if (k) { S.pfMenu = null; pfRefresh(k); } if (S.dMenu) { S.dMenu = null; render(); } };
+  document.addEventListener('click', e => { if ((S.pfMenu || S.dMenu) && !(e.target.closest && e.target.closest('.addwrap'))) tutupMenu(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
   const h = location.hash.slice(1);
   if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
