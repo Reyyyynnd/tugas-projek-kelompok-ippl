@@ -1852,7 +1852,7 @@ function settings() {
           <div class="sx-help"><button type="button" class="sx-hb" onclick="startTour()"><i>${sxi('compass')}</i><span><b>Panduan penggunaan</b><small>Tur singkat yang menyorot menu utama</small></span>${sxi('play')}</button>
             <a class="sx-hb" href="mailto:${KONTAK.email}"><i>${sxi('mail')}</i><span><b>Email</b><small>${KONTAK.email}</small></span>${sxi('arrow')}</a>
             <a class="sx-hb" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer"><i>${sxi('chat')}</i><span><b>WhatsApp</b><small>${KONTAK.wa}</small></span>${sxi('arrow')}</a>
-            <div class="sx-about"><img src="logo.svg" alt="" width="34" height="34"><div><b>KelasBelajar</b><small>Platform belajar dan mengajar · versi 1.0</small></div></div></div></div></section>
+          </div></div></section>
     </div></div>`;
 }
 
@@ -1874,7 +1874,7 @@ function tourSteps() {
       : { v: 'courses', h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen</b>: tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu', '<b>Materi</b>: lihat materi yang dibuat dosenmu tanpa mengunduh atau bisa diunduh', '<b>Tugas</b>: tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas dan jika dosen mengembalikan tugasmu perbaiki tugasnya dan kirim ulang tugas tersebut', '<b>Quiz</b>: quiz berupa link atau file, jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan', '<span class="tr-red">Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.</span>'] },
     { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran' },
     { v: 'settings', t: N(4), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja' },
-    { t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu' },
+    { v: 'home', t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu' },
     { t: '.foot .fcontact', sc: 'center', h: 'Butuh bantuan?', p: `Hubungi kami lewat Email atau WhatsApp di sini jika ada kendala atau saran. Selamat ${d ? 'mengajar' : 'belajar'} ✨` }
   ];
 }
@@ -1984,7 +1984,7 @@ function render() {
   renderNav();
   const v = S.view;
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
-  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
+  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); document.body.classList.toggle('me-off', v === 'settings'); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
   if (v === 'settings') { sxInd(); requestAnimationFrame(sxInd); }
 }
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
@@ -2105,10 +2105,35 @@ $('#fReg').addEventListener('submit', async e => {
 
 /* ===== HALAMAN PROFIL ===== */
 function initProfil(){
-let editing = null, pwOpen = false, timer = null;   // editing: 'data' | 'kontak' | null
+let editing = null, pwOpen = false, timer = null, first = true;   // editing: 'data' | 'kontak' | null
 
 if (!Auth.requireLogin()) return;
 $('#bOut').onclick = () => Auth.logout();
+
+// Banner profil: cincin kelengkapan profil mengelilingi avatar (terisi sambil menghitung naik) + 3 langkah yang tercentang satu per satu.
+function pfScene(u, nMk) {
+  const nm = String(u.nama || '?').trim(), ini = esc(nm.charAt(0).toUpperCase());
+  const fn = esc(nm.split(/\s+/)[0].replace(/^./, c => c.toUpperCase()));
+  const steps = [
+    [!!u.verified, 'Gmail terverifikasi', 'Gmail belum terverifikasi', 'shield'],
+    [!!String(u.hp || '').trim(), 'No. HP tersimpan', 'No. HP belum diisi', 'mail'],
+    [nMk > 0, u.role === 'Pengajar' ? 'Sudah punya pelajaran' : 'Sudah bergabung ke kelas', u.role === 'Pengajar' ? 'Belum punya pelajaran' : 'Belum bergabung ke kelas', 'compass']
+  ];
+  const done = steps.filter(s => s[0]).length, pct = Math.round(done / steps.length * 100), C = 2 * Math.PI * 50;
+  const pesan = done === steps.length ? 'Profilmu sudah lengkap.' : `Tinggal ${steps.length - done} langkah lagi supaya profilmu lengkap.`;
+  return `<section class="pfk${done === steps.length ? ' full' : ''}" aria-label="Ringkasan profil" style="--p:${pct / 100};--c:${C.toFixed(1)}">
+    <div class="pfk-id">
+      <div class="pfk-ring">
+        <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="trk" cx="56" cy="56" r="50"/><circle class="bar" cx="56" cy="56" r="50"/></svg>
+        <span class="pfk-orbit" aria-hidden="true"><i></i></span>
+        <span class="pfk-av" aria-hidden="true">${ini}</span>
+        <span class="pfk-pct" role="img" aria-label="Kelengkapan profil ${pct} persen"><b>${pct}</b>%</span>
+      </div>
+      <div class="pfk-txt"><h1>${esc(sapa()[0])}, ${fn}</h1><p>${esc(u.role)} · ID ${esc(u.id)}</p><p class="pfk-msg">${pesan}</p></div>
+    </div>
+    <ul class="pfk-list">${steps.map((s, i) => `<li class="${s[0] ? 'ok' : 'no'}" style="--i:${i}"><span class="ck">${sxi(s[0] ? 'check' : s[3])}</span>${s[0] ? s[1] : s[2]}</li>`).join('')}</ul>
+  </section>`;
+}
 
 function render() {
   const u = Auth.session();
@@ -2128,7 +2153,7 @@ function render() {
 
 
   // Data diri terkunci setelah pendaftaran; hanya Kontak (No. HP dan Gmail) yang bisa diubah.
-  const dataCard = `<div class="card"><b>Data diri</b>
+  const dataCard = `<div class="card pf-card" style="--i:1"><div class="pf-h"><span class="pf-hi">${sxi('id')}</span><b>Data diri</b></div>
         <dl class="kv">
           <dt>Nama lengkap</dt><dd>${esc(u.nama)}</dd>
           <dt>Peran</dt><dd>${esc(u.role)}</dd>
@@ -2138,22 +2163,22 @@ function render() {
         <p class="lock">🔒 Nama lengkap, peran, dan minat belajar tidak dapat diubah setelah pendaftaran.</p></div>`;
 
   const kontakCard = editing === 'kontak'
-    ? `<form id="fKontak" class="card" novalidate><b>Ubah kontak</b>
+    ? `<form id="fKontak" class="card pf-card" style="--i:2" novalidate><div class="pf-h"><span class="pf-hi">${sxi('mail')}</span><b>Ubah kontak</b></div>
         <label class="f">No. HP<input id="eHp" value="${esc(u.hp)}" inputmode="tel" maxlength="16"></label>
         <label class="f">Gmail<input type="email" id="eEmail" value="${esc(u.email)}" autocomplete="email"></label>
         <p class="lock" style="margin:0">Jika Gmail diganti, kamu akan masuk dengan Gmail baru dan perlu memverifikasinya ulang.</p>
         <p class="err" id="eKontak" role="alert"></p>
         <div class="row"><button class="btn lime" type="submit">Simpan</button><button class="btn ghost" type="button" id="bBatalK">Batal</button></div></form>`
-    : `<div class="card"><div class="row" style="justify-content:space-between"><b>Kontak saya</b><button class="btn ghost" id="bEditK">Ubah</button></div>
+    : `<div class="card pf-card" style="--i:2"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('mail')}</span><b>Kontak saya</b></div><button class="btn ghost" id="bEditK">Ubah</button></div>
         <dl class="kv"><dt>No. HP</dt><dd>${esc(u.hp)}</dd><dt>Email</dt><dd>${esc(u.email)}</dd></dl>
         <p class="lock">✏️ No. HP dan Gmail masih bisa diubah. Gmail dipakai untuk masuk dan verifikasi.</p></div>`;
 
   const r = ringkas(u), isD = u.role === 'Pengajar';
-  const aktivitas = `<div class="card"><b>${isD ? 'Ringkasan mengajar' : 'Ringkasan belajar'}</b>
-    <div class="tiles">${r.tiles.map(([n, l]) => `<div class="tile"><b>${n}</b><span>${l}</span></div>`).join('')}</div></div>`;
+  const aktivitas = `<div class="card pf-card" style="--i:3"><div class="pf-h"><span class="pf-hi">${sxi('compass')}</span><b>${isD ? 'Ringkasan mengajar' : 'Ringkasan belajar'}</b></div>
+    <div class="tiles">${r.tiles.map(([n, l], i) => `<div class="tile" style="--i:${i}"><b>${n}</b><span>${l}</span></div>`).join('')}</div></div>`;
 
   const tgl = u.dibuat ? new Date(u.dibuat).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
-  const aman = `<div class="card"><b>Keamanan akun</b>
+  const aman = `<div class="card pf-card" style="--i:4"><div class="pf-h"><span class="pf-hi">${sxi('shield')}</span><b>Keamanan akun</b></div>
     <dl class="kv"><dt>Akun dibuat</dt><dd>${tgl}</dd><dt>Kata sandi</dt><dd>••••••••</dd></dl>
     ${pwOpen ? `<form id="fPw" novalidate style="margin-top:14px">
       <label class="f">Kata sandi saat ini<input type="password" id="pwOld" autocomplete="current-password"></label>
@@ -2163,26 +2188,43 @@ function render() {
       <div class="row"><button class="btn lime" type="submit">Simpan kata sandi</button><button class="btn ghost" type="button" id="bPwBatal">Batal</button></div></form>`
       : '<button class="btn ghost" id="bPw" style="margin-top:14px">Ubah kata sandi</button>'}</div>`;
 
-  const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map(m => {
+  const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map((m, mi) => {
     const d = dec(m);
     const sub = isD ? (m.kelas.map(k => `<span class="code-pill">${esc(k.nama)} · ${esc(k.kode)}</span>`).join(' ') || '<span class="quote">Belum ada kelas</span>') : `<span class="quote">Pengajar: ${esc(m.dosenNama)}</span>`;
-    return `<div class="mkitem"><div class="ic" style="background:${d.col}">${d.ic}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
+    return `<div class="mkitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${d.ic}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
   }).join('')}</div>`
     : `<p class="quote" style="margin:12px 0 0">${isD ? 'Belum ada pelajaran. Buat pelajaran dan kelas di menu Pelajaran.' : 'Belum bergabung ke kelas mana pun. Masukkan kode kelas dari pengajar di menu Pelajaran.'}</p>`;
-  const mkCard = `<div class="card pfull"><div class="row" style="justify-content:space-between"><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b><a class="btn ghost" href="index.html#courses">Buka pelajaran →</a></div>${mkItems}</div>`;
+  const mkCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="index.html#courses">Buka pelajaran →</a></div>${mkItems}</div>`;
 
-  const hapusCard = `<div class="card danger pfull"><div class="row" style="justify-content:space-between;align-items:center"><div style="min-width:0;flex:1 1 260px"><b>Hapus akun permanen</b><p class="quote" style="margin:4px 0 0">Menghapus akun akan menghapus seluruh data milikmu dan tidak bisa dibatalkan.</p></div><button class="btn red" id="bHapus">Hapus akun permanen</button></div></div>`;
+  const hapusCard = `<div class="card danger pfull pf-card" style="--i:6"><div class="row" style="justify-content:space-between;align-items:center"><div style="min-width:0;flex:1 1 260px"><b>Hapus akun permanen</b><p class="quote" style="margin:4px 0 0">Menghapus akun akan menghapus seluruh data milikmu dan tidak bisa dibatalkan.</p></div><button class="btn red" id="bHapus">Hapus akun permanen</button></div></div>`;
+
+  const scene = pfScene(u, r.mine.length);
+  const anim = first; first = false; $('#view').classList.toggle('pf-in', anim);
 
   $('#view').innerHTML = `
-    <div class="row" style="margin-bottom:6px"><div class="av big">${esc(u.nama.charAt(0).toUpperCase())}</div>
-      <div><h1 style="font-size:24px">${esc(u.nama)}</h1>
-      <span class="chip c-bl">${esc(u.role)}</span> ${u.verified ? '<span class="chip c-ok">Gmail terverifikasi</span>' : '<span class="chip c-no">Gmail belum terverifikasi</span>'}</div></div>
+    ${scene}
     ${baru ? '<div class="card note">🎉 Akun berhasil dibuat. Satu langkah lagi: verifikasi Gmail kamu di bawah ini.</div>' : ''}
     ${verif}
     <div class="pcols">${dataCard}${kontakCard}${aktivitas}${aman}</div>
     ${mkCard}${hapusCard}`;
 
   bind(u);
+  if (anim) pfCount();
+}
+
+// Angka di profil menghitung naik saat halaman pertama dibuka (dilewati bila animasi dikurangi)
+function pfCount() {
+  if (document.documentElement.classList.contains('no-anim') || (window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches)) return;
+  document.querySelectorAll('#view .tile b, #view .pfk-pct b').forEach(el => {
+    const t = el.textContent; if (!/\d/.test(t)) return;
+    const t0 = performance.now(), D = 900;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = k < 1 ? t.replace(/\d+(\.\d+)?/g, m => { const v = parseFloat(m) * e; return m.includes('.') ? v.toFixed(1) : Math.round(v); }) : t;
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
 }
 
 function bind(u) {
