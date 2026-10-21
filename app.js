@@ -1972,7 +1972,7 @@ function endTour() {
 function renderNav() {
   const it = [['home', '🏠', 'Beranda'], ['courses', '📚', 'Pelajaran'], ['progress', '📈', 'Progres'], ['settings', '⚙️', 'Pengaturan'], ['profil', '👤', 'Profil']];
   const inCourses = ['courses', 'course', 'kelas', 'pert'].includes(S.view);
-  $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" onclick="go('${v}')">${i} ${l}</button>`).join('');
+  $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" title="${l}" onclick="go('${v}')"><span class="ni">${i}</span><span class="nl">${l}</span></button>`).join('');
 }
 function go(v, id) {
   if (v === 'profil') { location.href = 'profil.html'; return; }
@@ -2344,4 +2344,17 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
     console.error(e);
     document.body.innerHTML = '<div style="padding:40px;font-family:system-ui,sans-serif;max-width:560px"><h2>Gagal memuat data</h2><p>' + esc((e && e.message) || e) + '</p><p>Periksa koneksi internet dan konfigurasi Supabase, lalu muat ulang halaman.</p></div>';
   }
+})();
+
+
+/* ===== Sidebar: bisa dibuka/tutup (ingat pilihan di perangkat ini) ===== */
+(function () {
+  const side = document.querySelector('aside'); if (!side) return;
+  const root = document.documentElement, KEY = 'kb-sb';
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'sb-tg';
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+  const sync = () => { const m = root.classList.contains('sb-min'); b.setAttribute('aria-expanded', String(!m)); b.setAttribute('aria-label', m ? 'Buka menu samping' : 'Tutup menu samping'); b.title = m ? 'Buka menu' : 'Tutup menu'; };
+  b.onclick = () => { const m = root.classList.toggle('sb-min'); try { localStorage.setItem(KEY, m ? '1' : '0'); } catch (e) {} sync(); };
+  side.appendChild(b); sync();
 })();

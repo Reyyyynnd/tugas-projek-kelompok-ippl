@@ -6,14 +6,15 @@
 <title>KelasBelajar</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=43">
+<link rel="stylesheet" href="style.css?v=46">
+<script>try{if(localStorage.getItem('kb-sb')==='1')document.documentElement.classList.add('sb-min')}catch(e){}</script>
 </head>
 <body data-page="beranda">
 <div class="app">
 <aside>
   <div class="logo"><img src="logo.svg" alt="" width="38" height="38"><div>KelasBelajar<small>Platform belajar dan mengajar untuk semua kalangan</small></div></div>
     <nav id="nav"></nav>
-  <div class="out"><nav><button onclick="Auth.logout()">↩ Keluar</button></nav></div>
+  <div class="out"><nav><button class="keluar" title="Keluar" onclick="Auth.logout()"><svg class="ni" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M16 8l4 4-4 4M20 12H9"/></svg><span class="nl">Keluar</span></button></nav></div>
 </aside>
 <main>
   <div class="top"><a class="meTop" href="profil.html" aria-label="Buka profil saya"><span class="av" id="meAv"></span><span class="mtxt"><b id="meName"></b><span class="msub" id="meSub"></span></span></a></div>
@@ -24,6 +25,6 @@
 <div id="layer"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="app.js?v=45"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>
