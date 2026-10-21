@@ -1125,7 +1125,7 @@ body[data-page="profil"] .meTop,body.me-off .meTop{display:none}
 /* ===== Profil: banner kelengkapan (cincin di sekitar avatar) ===== */
 .pfk{position:relative;overflow:hidden;isolation:isolate;display:flex;align-items:center;justify-content:space-between;gap:28px;padding:24px 32px;border-radius:22px;border:1px solid #dcebd5;background:linear-gradient(120deg,#f4faea,#e9f5ee)}
 .pfk::before,.pfk::after{content:"";position:absolute;z-index:-1;border-radius:50%;filter:blur(34px);pointer-events:none}
-.pfk::before{width:260px;height:260px;left:-60px;top:-110px;background:#c5f04a55;animation:pfkDrift 16s ease-in-out infinite alternate}
+.pfk::before{width:260px;height:260px;left:38%;top:-130px;background:#c5f04a55;animation:pfkDrift 16s ease-in-out infinite alternate}
 .pfk::after{width:240px;height:240px;right:6%;bottom:-120px;background:#3ddc9740;animation:pfkDrift 20s ease-in-out infinite alternate-reverse}
 .pfk-id{display:flex;align-items:center;gap:22px;min-width:0}
 .pfk-ring{position:relative;flex:none;width:112px;height:112px}
@@ -1137,8 +1137,6 @@ body[data-page="profil"] .meTop,body.me-off .meTop{display:none}
 .pfk-av{position:absolute;inset:13px;border-radius:50%;background:var(--lime);color:var(--g9);display:grid;place-items:center;font-size:36px;font-weight:800;box-shadow:inset 0 -6px 0 #0c2a1f12,0 6px 16px #0c2a1f1f}
 .pfk-pct{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);padding:2px 9px;border-radius:99px;background:var(--g9);color:#fff;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pfk-pct b{font-weight:800}
-.pfk-orbit{position:absolute;inset:0;animation:pfkSpin 9s linear infinite}
-.pfk-orbit i{position:absolute;left:50%;top:6px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--lime);border:2px solid var(--g7);box-sizing:border-box}
 .pfk-txt{min-width:0}
 .pfk-txt h1{margin:0;font-size:26px;line-height:1.2;letter-spacing:-.4px;color:var(--g9);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pfk-txt p{margin:4px 0 0;font-size:14px;color:var(--mu)}
@@ -1162,7 +1160,7 @@ body[data-page="profil"] .meTop,body.me-off .meTop{display:none}
 @keyframes pfkDrift{to{transform:translate(50px,28px) scale(1.15)}}
 @media(max-width:820px){.pfk{padding:20px 20px;gap:18px}.pfk-txt h1{font-size:22px}}
 @media(max-width:640px){.pfk{flex-direction:column;align-items:flex-start}.pfk-id{gap:16px;width:100%}.pfk-ring{width:92px;height:92px}.pfk-av{inset:11px;font-size:30px}.pfk-list{width:100%}.pfk-txt h1{white-space:normal}}
-@media(prefers-reduced-motion:reduce){.pfk,.pfk::before,.pfk::after,.pfk *{animation:none!important}.pfk-orbit{display:none}}
+@media(prefers-reduced-motion:reduce){.pfk,.pfk::before,.pfk::after,.pfk *{animation:none!important}.pfk-fx{display:none}}
 
 /* ===== Sidebar: buka/tutup + tombol Keluar yang jelas ===== */
 aside{z-index:5;transition:width .26s cubic-bezier(.2,.8,.2,1),padding .26s}
@@ -1202,12 +1200,76 @@ html.sb-min .sb-tg svg{transform:rotate(180deg)}
 .pfk-av{border:0;padding:0;cursor:pointer;overflow:hidden;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .pfk-av:hover{transform:scale(1.05);box-shadow:inset 0 -6px 0 #0c2a1f12,0 8px 20px #0c2a1f33}
 .pfk-av img{width:100%;height:100%;object-fit:cover;display:block}
-.pfk-cam{position:absolute;right:2px;bottom:14px;width:28px;height:28px;border-radius:50%;background:var(--g9);color:#fff;border:3px solid #f1f8e8;display:grid;place-items:center;pointer-events:none;box-shadow:0 3px 8px #0c2a1f40}
-.pfk-cam .sxi{width:13px;height:13px;stroke-width:2.2}
 .pfk-ring.busy .pfk-av{opacity:.55;pointer-events:none}
-.pfk-ring.busy .pfk-cam{animation:pfkSpin 1s linear infinite}
-.pfk-orbit,.pfk-ring svg{pointer-events:none}
+.pfk-ring.busy .pfk-ring svg{pointer-events:none}
 .pfk-rm{margin-left:6px;padding:0;border:0;background:none;color:var(--mu);font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .pfk-rm:hover{color:var(--red)}
 .pfk-list li.act{cursor:pointer;transition:transform .2s,box-shadow .2s}
 .pfk-list li.act:hover{transform:translateX(-3px);box-shadow:0 6px 14px #8a5a0022}
+
+/* Banner profil: tombol Ubah/Hapus foto + gelembung melayang di sisi kanan (jauh dari foto) */
+.pfk-act{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pfk-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:99px;border:1px solid #c9dcc4;background:#fff;color:var(--g9);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:transform .15s,box-shadow .15s,background .15s,color .15s}
+.pfk-btn .sxi{width:15px;height:15px}
+.pfk-btn:hover{transform:translateY(-1px);box-shadow:0 6px 14px #0c2a1f1f;background:var(--lime)}
+.pfk-btn.dng{color:var(--red);border-color:#efc3c3}
+.pfk-btn.dng:hover{background:#fdeaea;color:#b93636}
+.pfk-btn:focus-visible{outline:3px solid #2f6fed66;outline-offset:2px}
+.pfk-fx{position:absolute;top:0;bottom:0;right:0;width:46%;z-index:-1;overflow:hidden;pointer-events:none}
+.pfk-fx i{position:absolute;bottom:-30px;width:14px;height:14px;border-radius:50%;border:2px solid #3ddc97a0;background:#ffffffb0;opacity:0;animation:pfkFloat 8s ease-in infinite}
+.pfk-fx i:nth-child(1){left:8%;animation-delay:0s}
+.pfk-fx i:nth-child(2){left:24%;width:22px;height:22px;animation-delay:1.6s;animation-duration:10s}
+.pfk-fx i:nth-child(3){left:41%;width:10px;height:10px;animation-delay:3.1s}
+.pfk-fx i:nth-child(4){left:57%;width:18px;height:18px;animation-delay:.8s;animation-duration:9s}
+.pfk-fx i:nth-child(5){left:72%;animation-delay:4.2s;animation-duration:11s}
+.pfk-fx i:nth-child(6){left:86%;width:20px;height:20px;animation-delay:2.4s;animation-duration:9.5s}
+.pfk-fx i:nth-child(7){left:95%;width:9px;height:9px;animation-delay:5.5s}
+@keyframes pfkFloat{0%{transform:translateY(0) scale(.6);opacity:0}15%{opacity:.9}100%{transform:translateY(-280px) scale(1.1);opacity:0}}
+@media(max-width:640px){.pfk-fx{width:100%}}
+
+/* ===== Warna background pelajaran yang dipilih pengajar ===== */
+.pc.cust .pc-top{background:linear-gradient(135deg,var(--a),var(--b))}
+.pc.lt .pc-top{box-shadow:inset 0 -1px 0 var(--bd)}
+.pc.lt .pc-top::before{filter:invert(1);opacity:.55}
+.pc.lt .pc-pill{background:#0c2a1f14;color:#0c2a1f}
+.pc.lt .bar i{background:linear-gradient(90deg,#1f9d55,#6fd9a0)}
+.hv-tip.lt .hv-head{color:#0c2a1f;box-shadow:inset 0 -1px 0 var(--bd)}
+.hv-tip.lt .hv-head b{text-shadow:none}
+.hv-tip.lt .hv-head::before,.hv-tip.lt .hv-head::after{background:#0c2a1f12}
+/* pemilih warna di jendela Buat/Ubah pelajaran */
+.clr{display:grid;gap:8px;font-size:13px;font-weight:600}
+.clr-pv{position:relative;overflow:hidden;height:64px;border-radius:12px;border:1px solid var(--bd);background:linear-gradient(135deg,#2f6fed,#7aa7ff);display:flex;align-items:flex-end;padding:10px 14px;color:#fff;transition:background .2s}
+.clr-pv i{position:absolute;inset:0;background:radial-gradient(#ffffff40 1.5px,transparent 1.5px) 0 0/16px 16px}
+.clr-pv b{position:relative;font-size:14px;text-shadow:0 1px 2px #0003;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.clr-pv.lt{color:#0c2a1f}.clr-pv.lt b{text-shadow:none}.clr-pv.lt i{filter:invert(1);opacity:.5}
+.clr-sw{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.clr-dot{width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:var(--c);box-shadow:0 0 0 1px #c9d6cd;cursor:pointer;padding:0;transition:transform .15s,box-shadow .15s}
+.clr-dot:hover{transform:scale(1.12)}
+.clr-dot.on{box-shadow:0 0 0 2px var(--g9)}
+.clr-auto,.clr-any{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:99px;border:1px solid #c9d6cd;background:#fff;color:var(--g9);font:inherit;font-size:12px;font-weight:700;cursor:pointer;position:relative}
+.clr-auto.on,.clr-any.on{border-color:var(--g9);box-shadow:0 0 0 1px var(--g9)}
+.clr-any input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
+
+/* ===== Sidebar: tampilan lebih rapi ===== */
+aside{background:linear-gradient(180deg,#0f2d21 0%,#0c2419 100%);border-right:1px solid #ffffff0d;box-shadow:inset -1px 0 0 #00000020}
+.logo{gap:12px;padding:2px 8px 18px;margin-bottom:10px;border-bottom:1px solid #ffffff14}
+.logo img{width:40px;height:40px;border-radius:12px;box-shadow:0 6px 16px #0006}
+.logo>div{line-height:1.2;font-size:17px;letter-spacing:-.2px}
+.logo small{margin-top:3px;font-size:10px;line-height:1.35;font-weight:600;color:#c6f04ecc}
+aside>nav{gap:3px;margin-top:6px}
+nav a,nav button{position:relative;padding:8px 10px;border-radius:12px;font-size:14.5px;color:#c4d6ca;transition:background .18s,color .18s,transform .18s}
+nav a:hover,nav button:hover{background:#ffffff0f;color:#fff}
+nav a .ni:not(svg),nav button .ni:not(svg){display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#ffffff0f;font-size:17px;transition:background .18s,transform .18s}
+nav a:hover .ni:not(svg){transform:scale(1.06);background:#ffffff1c}
+nav a.on,nav button.on{background:linear-gradient(90deg,#c9f24f,#b9e83a);color:var(--g9);font-weight:700;box-shadow:0 6px 16px #c5f04a2e}
+nav a.on .ni:not(svg),nav button.on .ni:not(svg){background:#ffffff66}
+.out{border-top:1px solid #ffffff14;padding-top:10px}
+.out nav{margin-top:0}
+.out .keluar{width:100%;justify-content:center;gap:8px;padding:8px 12px;border-radius:10px;background:#ffffff0d;color:#e9b4b6;border:1px solid #ffffff14;font-size:13px;font-weight:600;box-shadow:none}
+.out .keluar svg.ni{width:16px;height:16px}
+.out .keluar:hover{background:#e5484d26;color:#ffb3b6;border-color:#e5484d55;transform:none;box-shadow:none}
+@media(min-width:821px){
+  html.sb-min .logo{padding-bottom:14px}
+  html.sb-min nav a,html.sb-min nav button{padding:6px 0}
+  html.sb-min .out .keluar{padding:8px 0}
+}

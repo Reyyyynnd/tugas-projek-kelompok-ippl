@@ -361,6 +361,18 @@ function stats(m, em) {
 // ---------- helper tampilan ----------
 const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff', '#e5f8ec', '#fff3dc', '#ece8ff', '#ffe9ec', '#e2f6f6'];
 const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i], i }; };
+// Warna background pelajaran (dipilih pengajar, bebas): m.warna = '#rrggbb'. Kosong = warna tema bawaan.
+const hexOk = c => /^#[0-9a-f]{6}$/i.test(String(c || '')) ? String(c).toLowerCase() : '';
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const hexMix = (h, t, p) => '#' + hexRgb(h).map((v, i) => Math.round(v + (t[i] - v) * p).toString(16).padStart(2, '0')).join('');
+const hexLum = h => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
+function mkWarna(src) {   // src: objek pelajaran atau string hex
+  const c = hexOk(typeof src === 'string' ? src : src && src.warna);
+  if (!c) return { c: '', st: '', cls: '', a: '', b: '', lt: false };
+  const lt = hexLum(c) > 0.62, b = lt ? hexMix(c, [0, 0, 0], 0.08) : hexMix(c, [255, 255, 255], 0.35);
+  return { c, st: `--a:${c};--b:${b};`, cls: ' cust' + (lt ? ' lt' : ''), a: c, b, lt };
+}
+const WARNA = [['#ffffff', 'Putih'], ['#111111', 'Hitam'], ['#2f6fed', 'Biru'], ['#1f9d55', 'Hijau'], ['#13a3a3', 'Tosca'], ['#6b4fe0', 'Ungu'], ['#ec4899', 'Pink'], ['#e5484d', 'Merah'], ['#f97316', 'Oranye'], ['#facc15', 'Kuning'], ['#92400e', 'Cokelat'], ['#6b7280', 'Abu-abu']];
 // Foto profil: disimpan di Storage bucket 'foto', alamatnya di u.pref.foto. Ikon pelajaran memakai foto pembuatnya (pengajar); bila belum ada, ikon bawaan.
 const fotoOk = f => /^https:\/\//.test(String(f || '')) ? f : '';
 const fotoOf = m => { const c = Auth.find(m.dosen); return fotoOk((c && c.pref && c.pref.foto) || m.dosenFoto); };
@@ -389,13 +401,13 @@ const cd = x => `<span data-exp="${absenExp(x)}">${fmt(absenExp(x) - Date.now())
 
 function courseCards(L) {
   return `<div class="courses pcs" id="pcs">${L.map((m, idx) => {
-    const d = dec(m); let sub, foot, held, tot = TOTAL, pill = '', pop = '', tip = '';
+    const d = dec(m), wa = mkWarna(m), thA = wa.c ? ` data-a="${wa.a}" data-b="${wa.b}"${wa.lt ? ' data-lt="1"' : ''}` : ''; let sub, foot, held, tot = TOTAL, pill = '', pop = '', tip = '';
     if (isDosen) {
       held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; tot = m.kelas.length ? m.kelas.reduce((a, k) => a + totalOf(k), 0) / m.kelas.length : TOTAL; sub = `${studentsOf(m.id).length} partisipan`;
       pill = `<span class="pc-pill">${m.kelas.length} kelas</span>`;
       foot = `<span>Pertemuan berjalan ${totalPert(m)}</span><span>${m.kelas.length ? 'Buka pelajaran →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
       // Saat kartu di-hover: daftar kelas yang bisa langsung dibuka (popover di luar kartu, lihat initPcTip)
-      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">🏷️</span><div><b>Pilih kelas</b><small>${esc(m.nama)} · masuk langsung</small></div></div><div class="hv-body">${m.kelas.length
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"${thA}><div class="hv-head"><span class="hv-ic">🏷️</span><div><b>Pilih kelas</b><small>${esc(m.nama)} · masuk langsung</small></div></div><div class="hv-body">${m.kelas.length
         ? m.kelas.map(k => `<button type="button" class="kchip" onclick="event.stopPropagation();bukaKelasDari('${m.id}','${k.id}')"><i>${esc(k.nama.trim().slice(-1).toUpperCase())}</i><span><b>${esc(k.nama)}</b><small>${studentsOf(m.id, k.id).length} partisipan · ${esc(k.kode)}</small></span><em>→</em></button>`).join('')
         : '<div class="hv-row muted">Belum ada kelas. Klik pelajaran ini untuk membuatnya.</div>'}</div><div class="hv-foot"><span></span><span>Klik pelajaran untuk semua kelas ›</span></div></div>`;
     } else {
@@ -405,9 +417,9 @@ function courseCards(L) {
       if (pertOf(m, U.email).some(x => absenOpen(x) && !p.att[x.n])) pill = '<span class="pc-pill live">🔔 Absen dibuka</span>';
       // Saat kartu di-hover: ringkasan total pertemuan dan tugas selesai (popover di luar kartu, lihat initPcTip)
       const lw = s2.lewat ? ` · <b class="neg">terlewat ${s2.lewat}</b>` : '';
-      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">${mkIc(m, d)}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"${thA}><div class="hv-head"><span class="hv-ic">${mkIc(m, d)}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
     }
-    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${mkIc(m, d)}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
+    return `<div class="pc th${d.i}${wa.cls}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx};${wa.st}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${mkIc(m, d)}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
   }).join('')}</div>`;
 }
 // ===== Popover hover di luar kartu =====
@@ -461,7 +473,8 @@ function showPcTip(card) {
     hvEl.addEventListener('click', e => { if (e.target.closest('button,a')) return; const c = hvCur; hidePcTip(); if (c) c.click(); });
   }
   hvCur = card;
-  hvEl.className = 'hv-tip ' + (src.dataset.th || '');
+  hvEl.className = 'hv-tip ' + (src.dataset.th || '') + (src.dataset.lt ? ' lt' : '');
+  if (src.dataset.a) { hvEl.style.setProperty('--a', src.dataset.a); hvEl.style.setProperty('--b', src.dataset.b); } else { hvEl.style.removeProperty('--a'); hvEl.style.removeProperty('--b'); }
   hvEl.innerHTML = '<i class="hv-arw"></i>' + src.innerHTML;
   hvBlur(card);
   const r = card.getBoundingClientRect(), dir0 = src.dataset.dir || 'auto';
@@ -1525,9 +1538,30 @@ function mkModal(id) {
   modal(`<h3>${m ? 'Ubah pelajaran' : 'Buat pelajaran'}</h3><div class="quote">${m ? 'Perubahan langsung terlihat oleh partisipan di kelasmu.' : 'Setelah dibuat, kamu bisa membuat kelas A, B, C… beserta kodenya.'}</div>
   <div class="fg" style="margin-top:12px"><label class="f">Nama pelajaran<input id="mNama" placeholder="Pemrograman Berorientasi Objek" maxlength="60" value="${m ? esc(m.nama) : ''}"></label>
   <div class="two"><label class="f">ID pelajaran (opsional)<input id="mKode" placeholder="mis. PLJ-01" maxlength="12" value="${m ? esc(m.kode || '') : ''}"></label><label class="f">Jadwal (opsional)<input id="mJadwal" placeholder="Selasa, 08.00–10.30" maxlength="40" value="${m ? esc(m.jadwal || '') : ''}"></label></div>
+  ${m !== undefined && isDosen ? warnaField(m) : ''}
   <p class="err" id="mErr" role="alert"></p>
   <div class="row"><button class="btn lime" onclick="createMk(${m ? `'${m.id}'` : ''})">${m ? 'Simpan perubahan' : 'Buat pelajaran'}</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
+  if ($('#mClr')) warnaSet($('#mClr').dataset.v);
   $('#mNama').focus();
+}
+// Pilihan warna background pelajaran: palet cepat (termasuk putih & hitam), pemilih warna bebas, dan pratinjau langsung
+function warnaField(m) {
+  const cur = hexOk(m && m.warna);
+  return `<div class="f clr" id="mClr" data-v="${cur}"><span>Warna background pelajaran</span>
+    <div class="clr-pv" id="mPv"><i></i><b>${m ? esc(m.nama) : 'Nama pelajaran'}</b></div>
+    <div class="clr-sw" role="group" aria-label="Pilih warna">
+      <button type="button" class="clr-auto" data-c="" onclick="warnaSet('')" title="Warna otomatis (bawaan)">Otomatis</button>
+      ${WARNA.map(([c, n]) => `<button type="button" class="clr-dot" data-c="${c}" style="--c:${c}" title="${n}" aria-label="${n}" onclick="warnaSet('${c}')"></button>`).join('')}
+      <label class="clr-any" title="Pilih warna lain"><input type="color" id="mWarna" value="${cur || '#2f6fed'}" oninput="warnaSet(this.value)" aria-label="Pilih warna lain"><span>Warna lain…</span></label>
+    </div></div>`;
+}
+function warnaSet(c) {
+  const box = $('#mClr'); if (!box) return;
+  const w = mkWarna(c); box.dataset.v = w.c;
+  const pv = $('#mPv'); pv.style.cssText = w.st; pv.className = 'clr-pv' + w.cls;
+  box.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === w.c));
+  const inp = $('#mWarna'); if (w.c && inp.value !== w.c) inp.value = w.c;
+  box.querySelector('.clr-any').classList.toggle('on', !!w.c && !WARNA.some(x => x[0] === w.c));
 }
 function createMk(id) {
   const nama = $('#mNama').value.trim(), e = $('#mErr'), old = id ? getMk(id) : null;
@@ -1535,8 +1569,10 @@ function createMk(id) {
   if (!nama) { e.textContent = 'Nama pelajaran wajib diisi.'; return; }
   if (st.mk().some(m => m.dosen === U.email && m.id !== id && m.nama.toLowerCase() === nama.toLowerCase())) { e.textContent = 'Kamu sudah punya pelajaran dengan nama ini.'; return; }
   const data = { nama, kode: $('#mKode').value.trim(), jadwal: $('#mJadwal').value.trim() };
+  const warna = $('#mClr') ? hexOk($('#mClr').dataset.v) : '';
+  if (warna) data.warna = warna;
   if (old) {
-    Object.assign(old, data);
+    Object.assign(old, data); if (!warna) delete old.warna;
     if (!saveMk(old)) { e.textContent = 'Gagal menyimpan data.'; return; }
     tutupModal(); toast('Pelajaran diperbarui'); render(); return;
   }
@@ -1755,7 +1791,8 @@ const SXI = {
   motion: '<path d="M4 12c3-6 5-6 8 0s5 6 8 0"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   play: '<path d="M8 5l11 7-11 7z"/>',
-  camera: '<path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'
+  camera: '<path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
 };
 const sxi = n => `<svg class="sxi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SXI[n]}</svg>`;
 const ST_FAQ = {
@@ -2165,16 +2202,15 @@ function pfScene(u, nMk) {
   const done = steps.filter(s => s[0]).length, pct = Math.round(done / steps.length * 100), C = 2 * Math.PI * 50;
   const pesan = done === steps.length ? 'Profilmu sudah lengkap.' : `Tinggal ${steps.length - done} langkah lagi supaya profilmu lengkap.`;
   return `<section class="pfk${done === steps.length ? ' full' : ''}" aria-label="Ringkasan profil" style="--p:${pct / 100};--c:${C.toFixed(1)}">
+    <span class="pfk-fx" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
     <div class="pfk-id">
       <div class="pfk-ring" id="pfRing">
         <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="trk" cx="56" cy="56" r="50"/><circle class="bar" cx="56" cy="56" r="50"/></svg>
-        <span class="pfk-orbit" aria-hidden="true"><i></i></span>
         <button type="button" class="pfk-av" id="bFoto" aria-label="${foto ? 'Ganti' : 'Pasang'} foto profil" title="${foto ? 'Ganti' : 'Pasang'} foto profil">${foto ? `<img src="${esc(foto)}" alt="Foto profil ${esc(nm)}">` : ini}</button>
-        <span class="pfk-cam" aria-hidden="true">${sxi('camera')}</span>
         <span class="pfk-pct" role="img" aria-label="Kelengkapan profil ${pct} persen"><b>${pct}</b>%</span>
         <input type="file" id="fFoto" accept="image/*" hidden>
       </div>
-      <div class="pfk-txt"><h1>${esc(sapa()[0])}, ${fn}</h1><p>${esc(u.role)} · ID ${esc(u.id)}</p><p class="pfk-msg">${pesan}${foto ? ' <button type="button" class="pfk-rm" id="bFotoHapus">Hapus foto</button>' : ''}</p></div>
+      <div class="pfk-txt"><h1>${esc(sapa()[0])}, ${fn}</h1><p>${esc(u.role)} · ID ${esc(u.id)}</p><p class="pfk-msg">${pesan}</p><div class="pfk-act"><button type="button" class="pfk-btn" id="bFotoUbah">${sxi('camera')}${foto ? 'Ubah foto profil' : 'Pasang foto profil'}</button>${foto ? `<button type="button" class="pfk-btn dng" id="bFotoHapus">${sxi('trash')}Hapus foto profil</button>` : ''}</div></div>
     </div>
     <ul class="pfk-list">${steps.map((s, i) => `<li class="${s[0] ? 'ok' : 'no'}${!s[0] && s[4] ? ' act' : ''}" style="--i:${i}"${s[0] ? '' : s[4]}><span class="ck">${sxi(s[0] ? 'check' : s[3])}</span>${s[0] ? s[1] : s[2]}</li>`).join('')}</ul>
   </section>`;
@@ -2276,7 +2312,7 @@ function bind(u) {
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
   // Foto profil
   const pickFoto = () => { const f = $('#fFoto'); if (f) f.click(); };
-  on('#bFoto', pickFoto); on('#liFoto', pickFoto);
+  on('#bFoto', pickFoto); on('#bFotoUbah', pickFoto); on('#liFoto', pickFoto);
   const lf = $('#liFoto'); if (lf) lf.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFoto(); } };
   const fi = $('#fFoto');
   if (fi) fi.onchange = async () => {
@@ -2285,7 +2321,10 @@ function bind(u) {
     try { await fotoSimpan(f); toast('Foto profil diperbarui'); render(); }
     catch (e) { ring.classList.remove('busy'); fi.value = ''; toast((e && e.message) || 'Foto gagal diunggah'); }
   };
-  on('#bFotoHapus', async () => { try { await fotoHapus(); toast('Foto profil dihapus'); render(); } catch (e) { toast((e && e.message) || 'Foto gagal dihapus'); } });
+  on('#bFotoHapus', () => {
+    modal(`<h3>Hapus foto profil?</h3><p class="quote">Foto profilmu akan dihapus dan diganti huruf awal namamu.</p><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" id="bFotoYa">Ya, hapus foto</button></div>`);
+    $('#bFotoYa').onclick = async () => { try { await fotoHapus(); tutupModal(); toast('Foto profil dihapus'); render(); } catch (e) { tutupModal(); toast((e && e.message) || 'Foto gagal dihapus'); } };
+  });
   on('#bSend', async () => {
     const b = $('#bSend'), say = m => { $('#eKode').textContent = m; };
     b.disabled = true; say('');
