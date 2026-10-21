@@ -1191,3 +1191,23 @@ html.sb-min .sb-tg svg{transform:rotate(180deg)}
   .out{display:block;border:0;padding-top:8px}
   .out nav{margin-top:0}
 }
+
+/* ===== Foto profil ===== */
+.av{overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.mk-ph{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+.pc-ic,.hv-ic,.prg-ic,.ic:has(>.mk-ph){overflow:hidden}
+.pc-ic:has(>.mk-ph){padding:3px;background:#fff}
+.pc-ic>.mk-ph{border-radius:13px}
+.pfk-av{border:0;padding:0;cursor:pointer;overflow:hidden;font-family:inherit;transition:transform .2s,box-shadow .2s}
+.pfk-av:hover{transform:scale(1.05);box-shadow:inset 0 -6px 0 #0c2a1f12,0 8px 20px #0c2a1f33}
+.pfk-av img{width:100%;height:100%;object-fit:cover;display:block}
+.pfk-cam{position:absolute;right:2px;bottom:14px;width:28px;height:28px;border-radius:50%;background:var(--g9);color:#fff;border:3px solid #f1f8e8;display:grid;place-items:center;pointer-events:none;box-shadow:0 3px 8px #0c2a1f40}
+.pfk-cam .sxi{width:13px;height:13px;stroke-width:2.2}
+.pfk-ring.busy .pfk-av{opacity:.55;pointer-events:none}
+.pfk-ring.busy .pfk-cam{animation:pfkSpin 1s linear infinite}
+.pfk-orbit,.pfk-ring svg{pointer-events:none}
+.pfk-rm{margin-left:6px;padding:0;border:0;background:none;color:var(--mu);font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.pfk-rm:hover{color:var(--red)}
+.pfk-list li.act{cursor:pointer;transition:transform .2s,box-shadow .2s}
+.pfk-list li.act:hover{transform:translateX(-3px);box-shadow:0 6px 14px #8a5a0022}

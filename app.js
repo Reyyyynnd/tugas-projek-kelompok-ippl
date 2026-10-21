@@ -148,6 +148,41 @@ const Auth = {
   async logout() { try { await Q; await sb.auth.signOut(); } catch (e) {} location.href = 'login.html'; }
 };
 
+// Ubah foto jadi persegi 320px (JPEG), unggah ke bucket 'foto', simpan alamatnya di profil, dan salin ke pelajaran milik pengajar
+async function fotoSimpan(file) {
+  const u = Auth.session(); if (!u) throw new Error('Silakan masuk lagi.');
+  if (!file || !/^image\//.test(file.type)) throw new Error('Pilih file gambar (JPG, PNG, atau WebP).');
+  if (file.size > 15 * 1024 * 1024) throw new Error('Ukuran foto terlalu besar (maks. 15 MB).');
+  let img = null; try { img = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) {}
+  if (!img) img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('Foto tidak bisa dibuka. Coba format JPG atau PNG.')); i.src = URL.createObjectURL(file); });
+  const w = img.width || img.naturalWidth, h = img.height || img.naturalHeight, s = Math.min(w, h), S = 320;
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, S, S); cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, (w - s) / 2, (h - s) / 2, s, s, 0, 0, S, S);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88));
+  if (!blob) throw new Error('Foto gagal diproses.');
+  const path = u.uid + '/avatar.jpg';
+  const { error } = await sb.storage.from('foto').upload(path, blob, { contentType: 'image/jpeg', upsert: true, cacheControl: '3600' });
+  if (error) throw error;
+  const url = sb.storage.from('foto').getPublicUrl(path).data.publicUrl + '?v=' + Date.now();
+  fotoSet(u, url);
+  return url;
+}
+async function fotoHapus() {
+  const u = Auth.session(); if (!u) return;
+  try { await sb.storage.from('foto').remove([u.uid + '/avatar.jpg']); } catch (e) {}
+  fotoSet(u, '');
+}
+function fotoSet(u, url) {
+  const pref = { ...(u.pref || {}) }; if (url) pref.foto = url; else delete pref.foto;
+  Auth.update(u.email, { pref });
+  if (u.role === 'Pengajar') {
+    const all = DB.get('lms_mk', []); let ch = false;
+    all.forEach(m => { if (m.dosen === u.email && (m.dosenFoto || '') !== url) { if (url) m.dosenFoto = url; else delete m.dosenFoto; ch = true; } });
+    if (ch) DB.set('lms_mk', all);
+  }
+}
+
 const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v).trim());
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function toast(t) {
@@ -166,7 +201,9 @@ function applyPref() {
 // Info pengguna di bilah atas: nama, lencana peran yang jelas, dan ID
 function setMe(u) {
   const g = id => document.getElementById(id);
-  g('meAv').textContent = (u.nama || '?').charAt(0).toUpperCase();
+  const av = g('meAv'), ini = (u.nama || '?').charAt(0).toUpperCase(), ft = fotoOk(u.pref && u.pref.foto);
+  av.textContent = ini;
+  if (ft) { const im = new Image(); im.alt = ''; im.onload = () => { av.textContent = ''; av.appendChild(im); }; im.src = ft; }
   g('meName').textContent = u.nama;
   g('meSub').innerHTML = `<span class="idtxt">ID ${esc(u.id)}</span><span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span>`;
   initTop(u);
@@ -324,6 +361,10 @@ function stats(m, em) {
 // ---------- helper tampilan ----------
 const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff', '#e5f8ec', '#fff3dc', '#ece8ff', '#ffe9ec', '#e2f6f6'];
 const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i], i }; };
+// Foto profil: disimpan di Storage bucket 'foto', alamatnya di u.pref.foto. Ikon pelajaran memakai foto pembuatnya (pengajar); bila belum ada, ikon bawaan.
+const fotoOk = f => /^https:\/\//.test(String(f || '')) ? f : '';
+const fotoOf = m => { const c = Auth.find(m.dosen); return fotoOk((c && c.pref && c.pref.foto) || m.dosenFoto); };
+const mkIc = (m, d) => { const f = fotoOf(m); return f ? `<img class="mk-ph" src="${esc(f)}" alt="" onerror="this.replaceWith(document.createTextNode('${d.ic}'))">` : d.ic; };
 const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
 const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="profil.html"><b>Verifikasi sekarang</b></a></div>';
 const head = () => heroB() + banner();
@@ -332,7 +373,7 @@ const sc = (l, v, ic, bg, c, sub, cls, act, pop) => `<div class="card stat${act 
 const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
 const cap1 = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const hl = (l, v) => `<span class="hlbl">${l}:</span> ${v}`;   // "Label: nilai" untuk subjudul header
-const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${d.ic}</div><div><h1 style="font-size:24px">${esc(m.nama)}${m.kode ? ` <span class="hid">(${esc(m.kode)})</span>` : ''}</h1><div class="hsub">${sub}</div></div></div>`; };
+const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${mkIc(m, d)}</div><div><h1 style="font-size:24px">${esc(m.nama)}${m.kode ? ` <span class="hid">(${esc(m.kode)})</span>` : ''}</h1><div class="hsub">${sub}</div></div></div>`; };
 const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
 const btnMk = '<button class="btn lime" onclick="mkModal()">Buat pelajaran</button>';
 const fmtDt = ts => new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -364,9 +405,9 @@ function courseCards(L) {
       if (pertOf(m, U.email).some(x => absenOpen(x) && !p.att[x.n])) pill = '<span class="pc-pill live">🔔 Absen dibuka</span>';
       // Saat kartu di-hover: ringkasan total pertemuan dan tugas selesai (popover di luar kartu, lihat initPcTip)
       const lw = s2.lewat ? ` · <b class="neg">terlewat ${s2.lewat}</b>` : '';
-      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">${d.ic}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"><div class="hv-head"><span class="hv-ic">${mkIc(m, d)}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
     }
-    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${d.ic}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
+    return `<div class="pc th${d.i}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${mkIc(m, d)}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
   }).join('')}</div>`;
 }
 // ===== Popover hover di luar kartu =====
@@ -1499,7 +1540,7 @@ function createMk(id) {
     if (!saveMk(old)) { e.textContent = 'Gagal menyimpan data.'; return; }
     tutupModal(); toast('Pelajaran diperbarui'); render(); return;
   }
-  const m = { id: uid('mk'), ...data, dosen: U.email, dosenNama: U.nama, kelas: [] };
+  const m = { id: uid('mk'), ...data, dosen: U.email, dosenNama: U.nama, ...(fotoOk(prefOf(U).foto) ? { dosenFoto: prefOf(U).foto } : {}), kelas: [] };
   if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   tutupModal(); toast('Pelajaran dibuat. Sekarang buat kelasnya.'); go('course', m.id);
 }
@@ -1648,7 +1689,7 @@ function progressM(L) {
       const qz = adaQuiz(x) ? (quizDone(p, x) ? chip('bl', 'Quiz selesai') : chip('wait', 'Quiz belum')) : '';
       return `<button type="button" class="prg-row" onclick="bukaItem('${m.id}',${x.n})"><span class="prg-n">${x.n}</span><span class="prg-t">${esc(x.topik)}</span><span class="prg-cs">${chip(ac === 'live' ? 'ok' : ac, al)}${tg}${qz}</span></button>`;
     }).join('') || '<div class="prg-empty">Belum ada pertemuan di pelajaran ini.</div>';
-    return `<div class="prg-card prg-rise${open ? ' open' : ''}" style="--i:${idx}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-ic" style="background:${d.col}">${d.ic}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}${s.held ? ` · Pertemuan ${s.held}/${tot}` : ''}</small></span>${pgRing(cp, '', 64)}<span class="prg-chev" aria-hidden="true">▾</span></button>
+    return `<div class="prg-card prg-rise${open ? ' open' : ''}" style="--i:${idx}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-ic" style="background:${d.col}">${mkIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}${s.held ? ` · Pertemuan ${s.held}/${tot}` : ''}</small></span>${pgRing(cp, '', 64)}<span class="prg-chev" aria-hidden="true">▾</span></button>
       <div class="prg-ms">${pgMeter('🗓️', 'Kehadiran', `${s.hadir}/${s.held} · ${ap}%`, ap, 'ab')}${pgMeter('📝', 'Tugas & quiz selesai', `${s.done}/${s.tasks} · ${tp}%`, tp, 'tg')}</div>
       <div class="prg-dots" aria-label="Pertemuan">${dots || '<span class="prg-empty">Belum ada pertemuan.</span>'}</div>
       <div class="prg-det"><div class="prg-in"><div class="prg-leg"><span><i class="ok"></i>Hadir</span><span><i class="no"></i>Terlewat/Alpa</span><span><i class="iz"></i>Izin</span><span><i class="wait"></i>Belum</span></div>${detail}<div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="go('course','${m.id}')">Buka pelajaran →</button></div></div></div></div>`;
@@ -1672,7 +1713,7 @@ function progressD(L) {
         <div class="prg-det"><div class="prg-in"><div class="prg-plist">${plist}</div><div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="bukaKelasDari('${m.id}','${k.id}')">Buka kelas →</button></div></div></div></div>`;
     }).join('') || '<div class="prg-empty">Belum ada kelas di pelajaran ini.</div>';
     G.h += M.h; G.hd += M.hd; G.d += M.d; G.t += M.t; G.n += M.n; G.low = (G.low || 0) + (M.low || 0);
-    return `<div class="prg-card prg-rise" style="--i:${idx}"><div class="prg-top static"><span class="prg-ic" style="background:${d.col}">${d.ic}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${m.kelas.length} kelas · ${M.n} partisipan</small></span>${pgRing(cmb(M), '', 64)}</div>${krows}</div>`;
+    return `<div class="prg-card prg-rise" style="--i:${idx}"><div class="prg-top static"><span class="prg-ic" style="background:${d.col}">${mkIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${m.kelas.length} kelas · ${M.n} partisipan</small></span>${pgRing(cmb(M), '', 64)}</div>${krows}</div>`;
   }).join('');
   const all = cmb(G), has = G.hd > 0 || G.t > 0, [lic, ltl, lsub] = pgLevel(all, has);
   const chips = `<span class="prg-chip">🎒 ${G.n} partisipan</span><span class="prg-chip">🗓️ Rata-rata hadir ${pgPct(G.h, G.hd)}%</span><span class="prg-chip">📝 Tugas/quiz ${pgPct(G.d, G.t)}%</span>${G.low ? `<span class="prg-chip alert">⚠️ ${G.low} perlu perhatian</span>` : (has ? '<span class="prg-chip ok">✅ Semua partisipan baik</span>' : '')}`;
@@ -1713,7 +1754,8 @@ const SXI = {
   key: '<circle cx="8" cy="14" r="4"/><path d="M11 11l8-8M16 6l3 3M14 8l2 2"/>',
   motion: '<path d="M4 12c3-6 5-6 8 0s5 6 8 0"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  play: '<path d="M8 5l11 7-11 7z"/>'
+  play: '<path d="M8 5l11 7-11 7z"/>',
+  camera: '<path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'
 };
 const sxi = n => `<svg class="sxi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SXI[n]}</svg>`;
 const ST_FAQ = {
@@ -2110,28 +2152,31 @@ let editing = null, pwOpen = false, timer = null, first = true;   // editing: 'd
 if (!Auth.requireLogin()) return;
 $('#bOut').onclick = () => Auth.logout();
 
-// Banner profil: cincin kelengkapan profil mengelilingi avatar (terisi sambil menghitung naik) + 3 langkah yang tercentang satu per satu.
+// Banner profil: cincin kelengkapan profil mengelilingi foto/avatar (terisi sambil menghitung naik) + langkah yang tercentang satu per satu.
 function pfScene(u, nMk) {
-  const nm = String(u.nama || '?').trim(), ini = esc(nm.charAt(0).toUpperCase());
+  const nm = String(u.nama || '?').trim(), ini = esc(nm.charAt(0).toUpperCase()), foto = fotoOk(u.pref && u.pref.foto);
   const fn = esc(nm.split(/\s+/)[0].replace(/^./, c => c.toUpperCase()));
   const steps = [
-    [!!u.verified, 'Gmail terverifikasi', 'Gmail belum terverifikasi', 'shield'],
-    [!!String(u.hp || '').trim(), 'No. HP tersimpan', 'No. HP belum diisi', 'mail'],
-    [nMk > 0, u.role === 'Pengajar' ? 'Sudah punya pelajaran' : 'Sudah bergabung ke kelas', u.role === 'Pengajar' ? 'Belum punya pelajaran' : 'Belum bergabung ke kelas', 'compass']
+    [!!u.verified, 'Gmail terverifikasi', 'Gmail belum terverifikasi', 'shield', ''],
+    [!!String(u.hp || '').trim(), 'No. HP tersimpan', 'No. HP belum diisi', 'mail', ''],
+    [!!foto, 'Foto profil terpasang', 'Pasang foto profil', 'camera', ' id="liFoto" role="button" tabindex="0"'],
+    [nMk > 0, u.role === 'Pengajar' ? 'Sudah punya pelajaran' : 'Sudah bergabung ke kelas', u.role === 'Pengajar' ? 'Belum punya pelajaran' : 'Belum bergabung ke kelas', 'compass', '']
   ];
   const done = steps.filter(s => s[0]).length, pct = Math.round(done / steps.length * 100), C = 2 * Math.PI * 50;
   const pesan = done === steps.length ? 'Profilmu sudah lengkap.' : `Tinggal ${steps.length - done} langkah lagi supaya profilmu lengkap.`;
   return `<section class="pfk${done === steps.length ? ' full' : ''}" aria-label="Ringkasan profil" style="--p:${pct / 100};--c:${C.toFixed(1)}">
     <div class="pfk-id">
-      <div class="pfk-ring">
+      <div class="pfk-ring" id="pfRing">
         <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="trk" cx="56" cy="56" r="50"/><circle class="bar" cx="56" cy="56" r="50"/></svg>
         <span class="pfk-orbit" aria-hidden="true"><i></i></span>
-        <span class="pfk-av" aria-hidden="true">${ini}</span>
+        <button type="button" class="pfk-av" id="bFoto" aria-label="${foto ? 'Ganti' : 'Pasang'} foto profil" title="${foto ? 'Ganti' : 'Pasang'} foto profil">${foto ? `<img src="${esc(foto)}" alt="Foto profil ${esc(nm)}">` : ini}</button>
+        <span class="pfk-cam" aria-hidden="true">${sxi('camera')}</span>
         <span class="pfk-pct" role="img" aria-label="Kelengkapan profil ${pct} persen"><b>${pct}</b>%</span>
+        <input type="file" id="fFoto" accept="image/*" hidden>
       </div>
-      <div class="pfk-txt"><h1>${esc(sapa()[0])}, ${fn}</h1><p>${esc(u.role)} · ID ${esc(u.id)}</p><p class="pfk-msg">${pesan}</p></div>
+      <div class="pfk-txt"><h1>${esc(sapa()[0])}, ${fn}</h1><p>${esc(u.role)} · ID ${esc(u.id)}</p><p class="pfk-msg">${pesan}${foto ? ' <button type="button" class="pfk-rm" id="bFotoHapus">Hapus foto</button>' : ''}</p></div>
     </div>
-    <ul class="pfk-list">${steps.map((s, i) => `<li class="${s[0] ? 'ok' : 'no'}" style="--i:${i}"><span class="ck">${sxi(s[0] ? 'check' : s[3])}</span>${s[0] ? s[1] : s[2]}</li>`).join('')}</ul>
+    <ul class="pfk-list">${steps.map((s, i) => `<li class="${s[0] ? 'ok' : 'no'}${!s[0] && s[4] ? ' act' : ''}" style="--i:${i}"${s[0] ? '' : s[4]}><span class="ck">${sxi(s[0] ? 'check' : s[3])}</span>${s[0] ? s[1] : s[2]}</li>`).join('')}</ul>
   </section>`;
 }
 
@@ -2191,7 +2236,7 @@ function render() {
   const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map((m, mi) => {
     const d = dec(m);
     const sub = isD ? (m.kelas.map(k => `<span class="code-pill">${esc(k.nama)} · ${esc(k.kode)}</span>`).join(' ') || '<span class="quote">Belum ada kelas</span>') : `<span class="quote">Pengajar: ${esc(m.dosenNama)}</span>`;
-    return `<div class="mkitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${d.ic}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
+    return `<div class="mkitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${mkIc(m, d)}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
   }).join('')}</div>`
     : `<p class="quote" style="margin:12px 0 0">${isD ? 'Belum ada pelajaran. Buat pelajaran dan kelas di menu Pelajaran.' : 'Belum bergabung ke kelas mana pun. Masukkan kode kelas dari pengajar di menu Pelajaran.'}</p>`;
   const mkCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="index.html#courses">Buka pelajaran →</a></div>${mkItems}</div>`;
@@ -2229,6 +2274,18 @@ function pfCount() {
 
 function bind(u) {
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+  // Foto profil
+  const pickFoto = () => { const f = $('#fFoto'); if (f) f.click(); };
+  on('#bFoto', pickFoto); on('#liFoto', pickFoto);
+  const lf = $('#liFoto'); if (lf) lf.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFoto(); } };
+  const fi = $('#fFoto');
+  if (fi) fi.onchange = async () => {
+    const f = fi.files && fi.files[0]; if (!f) return;
+    const ring = $('#pfRing'); ring.classList.add('busy');
+    try { await fotoSimpan(f); toast('Foto profil diperbarui'); render(); }
+    catch (e) { ring.classList.remove('busy'); fi.value = ''; toast((e && e.message) || 'Foto gagal diunggah'); }
+  };
+  on('#bFotoHapus', async () => { try { await fotoHapus(); toast('Foto profil dihapus'); render(); } catch (e) { toast((e && e.message) || 'Foto gagal dihapus'); } });
   on('#bSend', async () => {
     const b = $('#bSend'), say = m => { $('#eKode').textContent = m; };
     b.disabled = true; say('');
