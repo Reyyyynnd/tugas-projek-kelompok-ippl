@@ -158,8 +158,11 @@ function toast(t) {
 
 const PAGE=document.body.dataset.page;
 // Preferensi pengguna disimpan di data akunnya (u.pref): ukuran teks, pengingat, dan penanda panduan awal sudah dilihat (tour)
-const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, tour: false, ...((u && u.pref) || {}) });
-function applyPref() { const u = Auth.session(); if (document.documentElement) document.documentElement.setAttribute('data-fs', prefOf(u).fs); }
+const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, tour: false, rm: false, dh: 24, ...((u && u.pref) || {}) });
+function applyPref() {
+  const u = Auth.session(), pf = prefOf(u), r = document.documentElement; if (!r) return;
+  r.setAttribute('data-fs', pf.fs); r.classList.toggle('no-anim', !!pf.rm);   // ukuran teks & mode kurangi animasi
+}
 // Info pengguna di bilah atas: nama, lencana peran yang jelas, dan ID
 function setMe(u) {
   const g = id => document.getElementById(id);
@@ -490,7 +493,7 @@ function ringkas(u) {
 
 // Tugas/quiz yang batasnya kurang dari 24 jam lagi
 const soonHtml = (todo, pf) => {
-  const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < 864e5);
+  const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < (pf.dh || 24) * 36e5);
   return t.length ? `<h2>⏰ Segera berakhir</h2>${t.map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip c-no">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '';
 };
 // ---------- elemen Beranda: hero dengan langit animasi, kutipan bergilir, bilah atas ----------
@@ -1676,9 +1679,9 @@ function progressD(L) {
   return pgHero(lic, ltl, has ? 'Rata-rata kelas-kelasmu. Buka kelas untuk melihat siapa yang butuh perhatian.' : lsub, chips, pgRing(all, 'rata-rata', 132)) + `<h2 class="prg-h">Per pelajaran <small>tekan kelas untuk melihat partisipan</small></h2><div class="prg-list">${cards}</div>`;
 }
 // Angka di halaman Progres naik perlahan dari 0 (dimatikan bila pengguna memilih mengurangi animasi)
-function prgFx() {
-  if (window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches) return;
-  document.querySelectorAll('#view [data-count]').forEach(el => {
+function prgFx(root) {
+  if ((window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches) || document.documentElement.classList.contains('no-anim')) return;
+  (root || document.querySelector('#view')).querySelectorAll('[data-count]').forEach(el => {
     const to = +el.dataset.count; if (!(to > 0)) return;
     const t0 = performance.now(), dur = 1000;
     const tick = now => { const k = Math.min(1, (now - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))); if (k < 1 && el.isConnected) requestAnimationFrame(tick); };
@@ -1690,24 +1693,167 @@ function setPref(k, v) {
   U.pref = { ...prefOf(U), [k]: v }; Auth.update(U.email, { pref: U.pref });
   applyPref(); render(); toast('Pengaturan disimpan');
 }
+// ---------- PENGATURAN ----------
+// Halaman Pengaturan: ringkasan akun + kesiapan di atas, lalu menu samping (Tampilan, Pengingat, Akun, Bantuan) dengan penanda yang
+// bergeser dan panel yang berganti dengan animasi. Perubahan disimpan langsung di tempat (stSet) tanpa memuat ulang halaman.
+const SXI = {
+  type: '<path d="M4 7V5h16v2M9 19h6M12 5v14"/>',
+  bell: '<path d="M18 16v-5a6 6 0 1 0-12 0v5l-2 2h16zM10 21a2 2 0 0 0 4 0"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  out: '<path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M16 8l4 4-4 4M20 12H9"/>',
+  undo: '<path d="M4 4v6h6M4.5 15a8 8 0 1 0 2-8.5L4 10"/>',
+  chev: '<path d="M6 9l6 6 6-6"/>',
+  id: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.5-1.5 1.7-2 2.5-2s2 .5 2.5 2M14 10h4M14 14h3"/>',
+  key: '<circle cx="8" cy="14" r="4"/><path d="M11 11l8-8M16 6l3 3M14 8l2 2"/>',
+  motion: '<path d="M4 12c3-6 5-6 8 0s5 6 8 0"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  play: '<path d="M8 5l11 7-11 7z"/>'
+};
+const sxi = n => `<svg class="sxi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SXI[n]}</svg>`;
+const ST_FAQ = {
+  Partisipan: [
+    ['Bagaimana cara bergabung ke kelas?', 'Buka menu Pelajaran, tekan Masuk kelas, lalu masukkan kode kelas dari pengajarmu.'],
+    ['Tombol absen tidak bisa ditekan, kenapa?', 'Absen mandiri hanya bisa ditekan selama waktunya dibuka pengajar (ada hitung mundur). Jika waktunya sudah habis, minta pengajar mengabsenmu.'],
+    ['Berapa batas lampiran tugas?', 'Maksimal 5 lampiran berupa file atau link. Tiap file maks. 1,5 MB dan total maks. 3 MB. Lampiran bisa dihapus sebelum dikirim.'],
+    ['Tugasku dikembalikan pengajar, apa yang harus dilakukan?', 'Perbaiki tugasnya, lalu kirim ulang dari pertemuan yang sama. Catatan pengajar tampil di bawah tugasmu.'],
+    ['Bagaimana cara keluar dari pelajaran?', 'Buka halaman pelajarannya lalu tekan Keluar dari pelajaran. Absen, tugas, dan nilaimu di pelajaran itu akan terhapus.']
+  ],
+  Pengajar: [
+    ['Bagaimana membuat kelas dan membagikan kodenya?', 'Buka Pelajaran, buat pelajaran, lalu tambah kelasnya (A, B, C). Bagikan kode kelas ke partisipan agar mereka bisa bergabung.'],
+    ['Di mana saya menilai tugas?', 'Buka kelas, tekan Info selengkapnya, lalu pilih tab Pengumpulan. Tugas yang menunggu penilaian ada di tab Belum dinilai.'],
+    ['Bagaimana mengubah status absensi partisipan?', 'Di Info selengkapnya, buka tab Absensi, pilih pertemuannya, lalu ubah status tiap partisipan kapan saja.'],
+    ['Bagaimana mengeluarkan partisipan dari kelas?', 'Buka kelasnya, lalu pada daftar Partisipan tekan Keluarkan di samping nama partisipan.'],
+    ['Bisakah saya menghapus pertemuan?', 'Bisa. Di tab Pertemuan tekan Hapus pertemuan sebelumnya, lalu pilih satu atau banyak pertemuan. Tindakan ini tidak bisa dibatalkan.']
+  ]
+};
+// Kesiapan akun: tiap butir bisa ditekan untuk langsung menuntaskannya
+function stChecks() {
+  const pf = prefOf(U), rem = isDosen ? pf.nl !== false : (pf.ab !== false || pf.dl !== false);
+  return [
+    { ok: !!U.verified, t: 'Gmail terverifikasi', act: "go('profil')" },
+    { ok: !!pf.tour, t: 'Panduan sudah dilihat', act: 'startTour()' },
+    { ok: rem, t: 'Pengingat aktif', act: "sxTab('pengingat')" }
+  ];
+}
+function stScoreHtml() {
+  const c = stChecks(), pct = Math.round(c.filter(x => x.ok).length / c.length * 100);
+  return `${pgRing(pct, 'siap', 112)}<div class="sx-chk">${c.map(x => `<button type="button" class="sx-ck${x.ok ? ' ok' : ''}" onclick="${x.act}"><i aria-hidden="true">${x.ok ? sxi('check') : ''}</i><span>${x.t}</span></button>`).join('')}</div>`;
+}
+// contoh tampilan pengingat di Beranda mengikuti pilihan pengguna
+function sxSample(pf) {
+  if (isDosen) return pf.nl !== false ? '<span class="sx-chip warn">3 tugas menunggu penilaian</span>' : '<span class="sx-chip off">Pengingat dimatikan</span>';
+  const c = [];
+  if (pf.ab !== false) c.push('<span class="sx-chip live">Absen sedang dibuka</span>');
+  if (pf.dl !== false) c.push(`<span class="sx-chip warn">Batas tugas dalam ${pf.dh || 24} jam</span>`);
+  return c.join('') || '<span class="sx-chip off">Semua pengingat dimatikan</span>';
+}
+// penanda menu samping bergeser ke tab yang aktif
+function sxInd() {
+  const nav = document.getElementById('sxNav'); if (!nav) return;
+  const b = nav.querySelector('button.on'), ind = nav.querySelector('.sx-ind'); if (!b || !ind) return;
+  ind.style.setProperty('--x', b.offsetLeft + 'px'); ind.style.setProperty('--y', b.offsetTop + 'px');
+  ind.style.setProperty('--w', b.offsetWidth + 'px'); ind.style.setProperty('--h', b.offsetHeight + 'px');
+}
+function sxTab(id) {
+  S.sxTab = id;
+  document.querySelectorAll('.sx-tab').forEach(b => { const on = b.dataset.t === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  document.querySelectorAll('.sx-panel').forEach(p => p.classList.toggle('on', p.id === 'sxp-' + id));
+  sxInd();
+  const p = document.getElementById('sxp-' + id); if (p && id === 'akun') prgFx(p);
+  const n = document.getElementById('sxNav'); if (n && n.scrollIntoView && window.innerWidth <= 820) n.scrollIntoView({ block: 'nearest' });
+}
+function stFlash() {
+  const el = document.getElementById('stSaved'); if (!el) return;
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+  clearTimeout(stFlash.t); stFlash.t = setTimeout(() => el.classList.remove('on'), 1800);
+}
+// simpan satu pengaturan langsung dan perbarui tampilan di tempat (tanpa render ulang halaman)
+function stSet(k, v) {
+  U.pref = { ...prefOf(U), [k]: v }; Auth.update(U.email, { pref: U.pref }); applyPref();
+  const pf = prefOf(U);
+  document.querySelectorAll('.sx-seg').forEach(sg => {
+    const val = String(pf[sg.dataset.k]); let idx = 0;
+    sg.querySelectorAll('button').forEach((b, i) => { const on = b.dataset.v === val; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); if (on) idx = i; });
+    sg.style.setProperty('--idx', idx);
+  });
+  const sc = document.getElementById('stScore'); if (sc) { sc.innerHTML = stScoreHtml(); prgFx(sc); }
+  const sm = document.getElementById('sxSample'); if (sm) sm.innerHTML = sxSample(pf);
+  stFlash();
+}
+function stFaq(i) { const el = document.getElementById('stq' + i); if (!el) return; const on = !el.classList.contains('open'); el.classList.toggle('open', on); const b = el.querySelector('.sx-q'); if (b) b.setAttribute('aria-expanded', on); }
+function stResetModal() {
+  modal(`<h3>Kembalikan pengaturan awal?</h3><p class="quote">Ukuran teks, animasi, dan pengingat kembali ke bawaan. Akun, pelajaran, dan datamu tidak berubah.</p><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="stReset()">Ya, kembalikan</button></div>`);
+}
+function stReset() {
+  U.pref = { ...prefOf(U), fs: 'normal', rm: false, dh: 24, dl: true, ab: true, nl: true }; Auth.update(U.email, { pref: U.pref });
+  applyPref(); tutupModal(); render(); toast('Pengaturan dikembalikan ke awal');
+}
 function settings() {
-  const pf = prefOf(U), isD = isDosen;
-  const seg = (v, l) => `<button class="seg ${pf.fs === v ? 'on' : ''}" onclick="setPref('fs','${v}')" aria-pressed="${pf.fs === v}">${l}</button>`;
-  const sw = (k, l, d) => `<label class="chk sw"><input type="checkbox" ${pf[k] !== false ? 'checked' : ''} onchange="setPref('${k}',this.checked)"><span><b>${l}</b><div class="quote">${d}</div></span></label>`;
-  return `<h1>Pengaturan</h1><p class="quote">Atur akun, tampilan, pengingat, dan data aplikasimu.</p>
-  <div class="pcols">
-    <div class="card"><b>Akun</b><dl class="kv"><dt>Nama</dt><dd>${esc(U.nama)}</dd><dt>Peran</dt><dd>${esc(U.role)} · ${esc(U.id)}</dd><dt>Gmail</dt><dd>${esc(U.email)} ${U.verified ? '<span class="chip c-ok">Terverifikasi</span>' : '<span class="chip c-no">Belum terverifikasi</span>'}</dd></dl>
-      <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="go('profil')">Buka profil</button><button class="btn ghost dng" onclick="Auth.logout()">Keluar</button></div></div>
-    <div class="card"><b>Tampilan</b><p class="quote" style="margin:6px 0 12px">Ukuran teks pada isi halaman. Berlaku di semua halaman.</p><div class="segs" role="group" aria-label="Ukuran teks">${seg('kecil', 'Kecil')}${seg('normal', 'Normal')}${seg('besar', 'Besar')}</div>
-      <p class="lock">Contoh: tulisan ini berubah ukurannya sesuai pilihanmu.</p></div>
-    <div class="card"><b>Pengingat</b>${isD ? sw('nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di beranda.')
-      : sw('ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di beranda saat pengajar membuka absen.') + sw('dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batasnya kurang dari 24 jam di beranda.')}</div>
-  </div>
-  <div class="card pfull"><b>Panduan penggunaan</b><p class="quote" style="margin:6px 0 12px">Tur singkat yang menyorot menu-menu utama dan menjelaskan cara memakainya.</p>
-    <div class="row"><button class="btn lime" onclick="startTour()">▶ Mulai panduan</button></div></div>
-  <div class="card pfull"><b>Bantuan & tentang</b><p class="quote" style="margin:6px 0 12px">Ada kendala atau saran? Hubungi kami.</p>
-    <div class="row"><a class="btn ghost" href="mailto:${KONTAK.email}">✉️ ${KONTAK.email}</a><a class="btn ghost" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer">💬 WhatsApp ${KONTAK.wa}</a></div>
-    <p class="lock">KelasBelajar versi 1.0</p></div>`;
+  const pf = prefOf(U), isD = isDosen, L = myMk(), tab = S.sxTab || 'tampilan';
+  const seg = (k, opts, cur, aa) => { const i = Math.max(0, opts.findIndex(o => String(o[0]) === String(cur))); return `<div class="sx-seg" data-k="${k}" style="--n:${opts.length};--idx:${i}" role="group"><i class="th" aria-hidden="true"></i>${opts.map(([v, l, s]) => `<button type="button" class="${String(v) === String(cur) ? 'on' : ''}" data-v="${v}" aria-pressed="${String(v) === String(cur)}" onclick="stSet('${k}',${typeof v === 'number' ? v : `'${v}'`})">${aa ? `<span style="font-size:${s}px">Aa</span>` : ''}${l}</button>`).join('')}</div>`; };
+  const sw = (ic, k, t, d, on) => `<label class="sx-row"><span class="sx-ic">${sxi(ic)}</span><span class="sx-tx"><b>${t}</b><small>${d}</small></span><span class="sx-sw"><input type="checkbox" role="switch" ${on ? 'checked' : ''} onchange="stSet('${k}',this.checked)" aria-label="${t}"><i aria-hidden="true"></i></span></label>`;
+  const kv = (ic, l, v) => `<div class="sx-kv"><span class="sx-ic">${sxi(ic)}</span><span class="sx-kl">${l}</span><span class="sx-kvv">${v}</span></div>`;
+  let tiles;
+  if (isD) {
+    const kls = L.reduce((a, m) => a + m.kelas.length, 0), prt = L.reduce((a, m) => a + totalPert(m), 0), mhsU = new Set();
+    L.forEach(m => m.kelas.forEach(k => studentsOf(m.id, k.id).forEach(u => mhsU.add(u.email))));
+    tiles = [['Pelajaran', L.length], ['Kelas', kls], ['Partisipan', mhsU.size], ['Pertemuan dibuat', prt]];
+  } else {
+    const T = L.reduce((a, m) => { const s = stats(m, U.email); return { h: a.h + s.hadir, hd: a.hd + s.held, d: a.d + s.done }; }, { h: 0, hd: 0, d: 0 });
+    tiles = [['Pelajaran diikuti', L.length], ['Pertemuan dihadiri', T.h], ['Tugas & quiz selesai', T.d], ['Total pertemuan', T.hd]];
+  }
+  const faq = (ST_FAQ[isD ? 'Pengajar' : 'Partisipan']).map(([q, a], i) => `<div class="sx-fq" id="stq${i}"><button type="button" class="sx-q" aria-expanded="false" onclick="stFaq(${i})"><span>${q}</span>${sxi('chev')}</button><div class="sx-a"><div><p>${a}</p></div></div></div>`).join('');
+  const steps = isD
+    ? [['Partisipan mengirim tugas', 'Tugas masuk ke tab Pengumpulan di kelas terkait.'], ['Jumlahnya muncul di Beranda', 'Kartu pengingat menampilkan banyaknya tugas yang belum dinilai.'], ['Kamu menilai tugasnya', 'Setelah dinilai, jumlahnya berkurang otomatis.']]
+    : [['Pengajar membuka absen', 'Kartu Absen sekarang muncul di Beranda lengkap dengan hitung mundur.'], ['Batas waktu mendekat', 'Tugas atau quiz yang batasnya masuk jendela pengingat tampil di Beranda.'], ['Kamu menyelesaikannya', 'Setelah dikirim atau ditandai selesai, pengingatnya hilang otomatis.']];
+  const tips = isD ? ['Keluar dari akun setelah memakai perangkat bersama.', 'Bagikan kode kelas hanya kepada partisipan kelasmu.', 'Jangan membagikan kata sandi kepada siapa pun.'] : ['Keluar dari akun setelah memakai perangkat bersama.', 'Gunakan Gmail pribadimu agar akun tidak tertukar.', 'Jangan membagikan kata sandi kepada siapa pun.'];
+  const gear = (cls, r, n, sw2) => `<svg class="sx-gear ${cls}" viewBox="0 0 100 100" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="50" cy="50" r="${r}" stroke-width="12" stroke-dasharray="${(2 * Math.PI * r / (n * 2)).toFixed(2)} ${(2 * Math.PI * r / (n * 2)).toFixed(2)}"/><circle cx="50" cy="50" r="${r - 8}" stroke-width="3"/><circle cx="50" cy="50" r="9" stroke-width="3"/></svg>`;
+  const tabs = [['tampilan', 'type', 'Tampilan', 'Ukuran teks dan gerakan'], ['pengingat', 'bell', 'Pengingat', 'Apa yang diingatkan'], ['akun', 'user', 'Akun', 'Data dan keamanan'], ['bantuan', 'help', 'Bantuan', 'Tanya jawab dan kontak']];
+  const panelH = (t, d) => `<div class="sx-ph"><h2>${t}</h2><p>${d}</p></div>`;
+  return `<section class="sx-hero"><div class="sx-bg" aria-hidden="true">${gear('g1', 38, 12)}${gear('g2', 26, 8)}<i></i><i></i></div>
+    <div class="sx-me"><div class="sx-av" aria-hidden="true"><span>${esc((U.nama || '?').trim().charAt(0).toUpperCase())}</span></div>
+      <div class="sx-who"><span class="sx-pill">Pengaturan</span><h1>${esc(U.nama)}</h1>
+        <p><span class="sx-tag">${esc(U.role)}</span><span class="sx-tag">ID ${esc(U.id)}</span></p>
+        <p class="sx-mail">${esc(U.email)}${U.verified ? `<span class="sx-ver">${sxi('check')}Terverifikasi</span>` : ''}</p>
+        <div class="sx-acts"><button class="btn lime sm" onclick="go('profil')">Buka profil</button><button class="btn sm sx-out" onclick="Auth.logout()">Keluar</button><span class="sx-saved" id="stSaved" role="status" aria-live="polite">${sxi('check')}Tersimpan</span></div></div></div>
+    <div class="sx-score" id="stScore">${stScoreHtml()}</div></section>
+  <div class="sx-body">
+    <nav class="sx-nav" id="sxNav" role="tablist" aria-label="Bagian pengaturan"><i class="sx-ind" aria-hidden="true"></i>${tabs.map(([id, ic, l, d], i) => `<button type="button" role="tab" class="sx-tab${tab === id ? ' on' : ''}" data-t="${id}" aria-selected="${tab === id}" style="--i:${i}" onclick="sxTab('${id}')"><span class="sx-ti">${sxi(ic)}</span><span class="sx-tt"><b>${l}</b><small>${d}</small></span></button>`).join('')}</nav>
+    <div class="sx-panels">
+      <section class="sx-panel${tab === 'tampilan' ? ' on' : ''}" id="sxp-tampilan" role="tabpanel">${panelH('Tampilan', 'Atur ukuran teks dan gerakan. Berlaku di semua halaman.')}
+        <div class="sx-2"><div class="sx-ctl">
+          <div class="sx-blk"><div class="sx-lb">Ukuran teks</div>${seg('fs', [['kecil', 'Kecil', 13], ['normal', 'Normal', 16], ['besar', 'Besar', 19]], pf.fs, true)}</div>
+          ${sw('motion', 'rm', 'Kurangi animasi', 'Matikan gerakan dan efek peralihan. Cocok jika animasi terasa mengganggu.', !!pf.rm)}
+          <button type="button" class="sx-link" onclick="stResetModal()">${sxi('undo')}Kembalikan pengaturan awal</button></div>
+          <div class="sx-prev" aria-hidden="true"><div class="sx-win"><i></i><i></i><i></i></div>
+            <div class="sx-pvbody"><div class="sx-pvside"><span></span><span class="on"></span><span></span></div>
+              <div class="sx-pvmain"><b>Contoh judul halaman</b><p>Beginilah isi halaman terlihat dengan ukuran teks yang kamu pilih.</p>
+                <div class="sx-pvrow"><span class="n">1</span><div><b>Pertemuan pertama</b><small>Absen mandiri · Tugas 1/3</small></div><span class="chip c-ok">Hadir</span></div><span class="btn lime sm">Tombol utama</span></div></div></div></div></section>
+      <section class="sx-panel${tab === 'pengingat' ? ' on' : ''}" id="sxp-pengingat" role="tabpanel">${panelH('Pengingat', 'Pilih apa saja yang diingatkan di Beranda.')}
+        <div class="sx-2"><div class="sx-ctl">
+          ${isD ? sw('bell', 'nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di Beranda.', pf.nl !== false)
+            : sw('bell', 'ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di Beranda saat pengajar membuka absen.', pf.ab !== false) + sw('bell', 'dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batas waktunya sudah dekat.', pf.dl !== false)
+              + `<div class="sx-blk"><div class="sx-lb">Jendela pengingat batas waktu</div>${seg('dh', [[6, '6 jam'], [12, '12 jam'], [24, '24 jam'], [48, '48 jam'], [72, '72 jam']], pf.dh || 24, false)}</div>`}
+          <div class="sx-sample"><small>Contoh di Beranda</small><div id="sxSample">${sxSample(pf)}</div></div></div>
+          <ol class="sx-steps">${steps.map(([t, d], i) => `<li style="--i:${i}"><span class="sx-sn">${i + 1}</span><div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ol></div></section>
+      <section class="sx-panel${tab === 'akun' ? ' on' : ''}" id="sxp-akun" role="tabpanel">${panelH('Akun', 'Data akunmu dan ringkasan aktivitas.')}
+        <div class="sx-tiles">${tiles.map(([l, n], i) => `<div class="sx-tile" style="--i:${i}"><b>${pgCn(n)}</b><small>${l}</small></div>`).join('')}</div>
+        <div class="sx-2"><div class="sx-ctl">${kv('user', 'Nama', esc(U.nama))}${kv('id', 'Peran', esc(U.role) + ' · ' + esc(U.id))}${kv('mail', 'Gmail', esc(U.email) + (U.verified ? ' <span class="chip c-ok">Terverifikasi</span>' : ' <span class="chip c-no">Belum terverifikasi</span>'))}${kv('key', 'Kata sandi', 'Ubah lewat halaman profil')}
+          <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="go('profil')">Buka profil</button><button class="btn ghost dng" onclick="Auth.logout()">${sxi('out')}Keluar</button></div></div>
+          <div class="sx-tips"><div class="sx-lb">${sxi('shield')}Tips keamanan</div>${tips.map(t => `<p>${sxi('check')}<span>${t}</span></p>`).join('')}</div></div></section>
+      <section class="sx-panel${tab === 'bantuan' ? ' on' : ''}" id="sxp-bantuan" role="tabpanel">${panelH('Bantuan', 'Jawaban cepat dan cara menghubungi kami.')}
+        <div class="sx-2"><div class="sx-faq">${faq}</div>
+          <div class="sx-help"><button type="button" class="sx-hb" onclick="startTour()"><i>${sxi('compass')}</i><span><b>Panduan penggunaan</b><small>Tur singkat yang menyorot menu utama</small></span>${sxi('play')}</button>
+            <a class="sx-hb" href="mailto:${KONTAK.email}"><i>${sxi('mail')}</i><span><b>Email</b><small>${KONTAK.email}</small></span>${sxi('arrow')}</a>
+            <a class="sx-hb" href="https://wa.me/${KONTAK.waIntl}" target="_blank" rel="noopener noreferrer"><i>${sxi('chat')}</i><span><b>WhatsApp</b><small>${KONTAK.wa}</small></span>${sxi('arrow')}</a>
+            <div class="sx-about"><img src="logo.svg" alt="" width="34" height="34"><div><b>KelasBelajar</b><small>Platform belajar dan mengajar · versi 1.0</small></div></div></div></div></section>
+    </div></div>`;
 }
 
 // ---------- PANDUAN SPOTLIGHT (panduan penggunaan awal) ----------
@@ -1838,7 +1984,8 @@ function render() {
   renderNav();
   const v = S.view;
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
-  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx(); if (v === 'progress') prgFx();
+  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
+  if (v === 'settings') { sxInd(); requestAnimationFrame(sxInd); }
 }
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
