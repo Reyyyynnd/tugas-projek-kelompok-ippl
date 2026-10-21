@@ -1591,23 +1591,99 @@ async function joinKelas() {
 }
 
 // ---------- PROGRES & PENGATURAN ----------
+// ---------- PROGRES ----------
+// Halaman Progres: ringkasan besar dengan cincin animasi, lencana (partisipan), kartu per pelajaran yang bisa dibuka,
+// deretan titik pertemuan, dan (pengajar) daftar partisipan per kelas yang diurutkan dari yang paling butuh perhatian.
+const pgPct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const pgComb = (h, hd, d, t) => { const c = []; if (hd) c.push(h / hd * 100); if (t) c.push(d / t * 100); return c.length ? Math.round(c.reduce((x, y) => x + y, 0) / c.length) : 0; };
+const pgCn = v => `<span data-count="${v}">${v}</span>`;
+const pgRing = (pct, lab, sz) => `<div class="prg-ring" style="--sz:${sz || 120}px" role="img" aria-label="${lab} ${pct}%"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="t" cx="50" cy="50" r="42"/><circle class="p" cx="50" cy="50" r="42" style="stroke-dashoffset:${(263.9 * (1 - pct / 100)).toFixed(1)}"/></svg><div><b>${pgCn(pct)}%</b>${lab ? `<small>${lab}</small>` : ''}</div></div>`;
+const pgMeter = (ic, l, val, pct, tone) => `<div class="prg-m"><div class="prg-ml"><span>${ic} ${l}</span><b>${val}</b></div><div class="prg-bar ${tone}"><i style="width:${pct}%"></i></div></div>`;
+const pgLevel = (pct, has) => !has ? ['🌱', 'Belum mulai', 'Progresmu muncul setelah ada pertemuan dan tugas.'] : pct >= 100 ? ['🏆', 'Juara Kelas', 'Sempurna! Semua target tercapai, pertahankan ya.'] : pct >= 75 ? ['🔥', 'Hampir Sempurna', 'Tinggal sedikit lagi, kamu keren!'] : pct >= 50 ? ['💪', 'Pelajar Tangguh', 'Sudah separuh jalan, terus melaju.'] : pct >= 25 ? ['🚀', 'Mulai Melaju', 'Awal yang bagus, jangan lewatkan pertemuan berikutnya.'] : ['🌱', 'Pemanasan', 'Ayo mulai kumpulkan progres, satu langkah kecil dulu.'];
+function pgTog(key) {
+  S.open[key] = !S.open[key];   // buka/tutup tanpa render ulang supaya animasinya tidak diulang
+  const el = document.querySelector(`[data-pg="${key}"]`); if (el) { el.classList.toggle('open', !!S.open[key]); const b = el.querySelector('.prg-top'); if (b) b.setAttribute('aria-expanded', !!S.open[key]); }
+}
+function pgBadge(t, ok, d) { toast((ok ? '🎉 ' : '🔒 ') + t + ' — ' + (ok ? 'sudah kamu dapatkan' : 'belum: ' + d)); }
+function pgHero(ic, title, sub, chips, ring) {
+  return `<section class="prg-hero"><div class="prg-bg" aria-hidden="true"><i></i><i></i><i></i><span class="prg-f a">📈</span><span class="prg-f b">⭐</span><span class="prg-f c">🎯</span></div>
+  <div class="prg-ht"><span class="prg-pill"><b class="prg-ico">${ic}</b>${title}</span><h1>Progres belajar</h1><p>${sub}</p><div class="prg-chips">${chips}</div></div>${ring}</section>`;
+}
+// status absen sebuah pertemuan untuk partisipan: [kelas warna, label]
+function pgAbsen(x, p) {
+  const a = p.att[x.n];
+  if (a === 'H') return ['ok', 'Hadir']; if (a === 'I') return ['iz', 'Izin']; if (a === 'A') return ['no', 'Alpa'];
+  if (absenOpen(x)) return ['live', 'Absen dibuka'];
+  if (x.absen && x.absen.dur > 0) return ['no', 'Terlewat'];
+  return ['wait', 'Belum diabsen'];
+}
 function progress() {
-  const L = myMk(), top = '<h1>Progres belajar</h1>';
-  if (!L.length) return top + empty('📈', 'Belum ada progres', isDosen ? 'Progres kelas muncul setelah kamu membuat kelas dan partisipan bergabung.' : 'Progres muncul setelah kamu bergabung ke kelas.', isDosen ? btnMk : btnJoin);
-  const bar = (l, r, p, c) => `<div class="meta"><span>${l}</span><span>${r}</span></div><div class="bar" style="margin-top:4px"><i style="width:${p}%${c ? ';background:' + c : ''}"></i></div>`;
-  return top + '<h2>Per pelajaran</h2><div class="courses">' + L.map(m => {
-    if (!isDosen) {
-      const s2 = stats(m, U.email), p = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
-      return `<div class="card"><b>${esc(m.nama)}</b>${bar('Kehadiran', p + '%', p)}${bar('Tugas & quiz selesai', s2.done + '/' + s2.tasks, s2.tasks ? s2.done / s2.tasks * 100 : 0, 'var(--amb)')}</div>`;
-    }
-    const rows = m.kelas.map(k => {
-      const ss = studentsOf(m.id, k.id), tasks = k.pert.reduce((a, x) => a + (x.tugas ? 1 : 0) + (adaQuiz(x) ? 1 : 0), 0); let h = 0, d = 0;
-      ss.forEach(u => { const s2 = stats(m, u.email); h += s2.hadir; d += s2.done; });
-      const ap = ss.length && k.pert.length ? Math.round(h / (ss.length * k.pert.length) * 100) : 0, tp = ss.length && tasks ? Math.round(d / (ss.length * tasks) * 100) : 0;
-      return `<div class="meta"><span><b>${esc(k.nama)}</b> · ${ss.length} partisipan</span><span>Hadir ${ap}% · Tugas/quiz ${tp}%</span></div>`;
-    }).join('') || '<p class="empty">Belum ada kelas.</p>';
-    return `<div class="card"><b>${esc(m.nama)}</b>${rows}</div>`;
-  }).join('') + '</div>';
+  const L = myMk();
+  if (!L.length) return '<h1>Progres belajar</h1>' + empty('📈', 'Belum ada progres', isDosen ? 'Progres kelas muncul setelah kamu membuat kelas dan partisipan bergabung.' : 'Progres muncul setelah kamu bergabung ke kelas.', isDosen ? btnMk : btnJoin);
+  return isDosen ? progressD(L) : progressM(L);
+}
+function progressM(L) {
+  const rows = L.map(m => ({ m, k: kelasOf(m, U.email), s: stats(m, U.email), pt: pertOf(m, U.email), p: P(m.id, U.email) }));
+  const T = rows.reduce((a, r) => ({ hadir: a.hadir + r.s.hadir, held: a.held + r.s.held, done: a.done + r.s.done, tasks: a.tasks + r.s.tasks, lewat: a.lewat + r.s.lewat }), { hadir: 0, held: 0, done: 0, tasks: 0, lewat: 0 });
+  const all = pgComb(T.hadir, T.held, T.done, T.tasks), has = T.held > 0 || T.tasks > 0, [lic, ltl, lsub] = pgLevel(all, has);
+  const chips = `<span class="prg-chip">🗓️ Hadir ${T.hadir}/${T.held}</span><span class="prg-chip">📝 Selesai ${T.done}/${T.tasks}</span>${T.tasks - T.done > 0 ? `<span class="prg-chip alert">⏳ ${T.tasks - T.done} belum selesai</span>` : (T.tasks ? '<span class="prg-chip ok">✅ Semua beres</span>' : '')}`;
+  const bd = [
+    ['🌱', 'Langkah Pertama', 'hadir atau menyelesaikan satu tugas', T.hadir > 0 || T.done > 0],
+    ['🎯', 'Rajin Hadir', 'kehadiran minimal 80%', T.held > 0 && pgPct(T.hadir, T.held) >= 80],
+    ['🔥', 'Hadir Terus', 'hadir di semua pertemuan', T.held > 0 && T.hadir === T.held],
+    ['✅', 'Tugas Tuntas', 'semua tugas dan quiz selesai', T.tasks > 0 && T.done === T.tasks]
+  ];
+  const badges = `<h2 class="prg-h">Lencana kamu <small>${bd.filter(b => b[3]).length}/${bd.length}</small></h2><div class="prg-badges">${bd.map((b, i) => `<button type="button" class="prg-badge${b[3] ? ' got' : ''}" style="--i:${i}" onclick="pgBadge('${b[1]}',${b[3]},'${b[2]}')" aria-label="Lencana ${b[1]}: ${b[3] ? 'sudah didapat' : 'belum, ' + b[2]}"><span class="bi">${b[3] ? b[0] : '🔒'}</span><b>${b[1]}</b><small>${b[2]}</small></button>`).join('')}</div>`;
+  const cards = rows.map((r, idx) => {
+    const { m, k, s, pt, p } = r, d = dec(m), key = 'prg-' + m.id, open = S.open[key] === undefined ? L.length === 1 : !!S.open[key];
+    const ap = pgPct(s.hadir, s.held), tp = pgPct(s.done, s.tasks), cp = pgComb(s.hadir, s.held, s.done, s.tasks), tot = k ? totalOf(k) : Math.max(TOTAL, pt.length);
+    const dots = pt.map((x, i) => { const [c, l] = pgAbsen(x, p); return `<button type="button" class="prg-dot ${c}" style="--i:${i}" title="Pertemuan ${x.n}: ${esc(x.topik)} · ${l}" aria-label="Pertemuan ${x.n}: ${l}" onclick="bukaItem('${m.id}',${x.n})">${x.n}</button>`; }).join('') + Array.from({ length: Math.max(0, tot - pt.length) }, (_, i) => `<span class="prg-dot future" style="--i:${pt.length + i}" aria-hidden="true"></span>`).join('');
+    const chip = (c, l) => `<span class="chip c-${c}">${l}</span>`;
+    const detail = pt.map(x => {
+      const [ac, al] = pgAbsen(x, p), f = p.sub[x.n], nl = p.nilai[x.n];
+      const tg = x.tugas ? (nl ? chip('ok', 'Dinilai' + (nl.skor != null ? ' · ' + nl.skor : '')) : f ? chip('bl', 'Terkirim') : p.kembali[x.n] ? chip('iz', 'Dikembalikan') : chip('wait', 'Tugas belum')) : '';
+      const qz = adaQuiz(x) ? (quizDone(p, x) ? chip('bl', 'Quiz selesai') : chip('wait', 'Quiz belum')) : '';
+      return `<button type="button" class="prg-row" onclick="bukaItem('${m.id}',${x.n})"><span class="prg-n">${x.n}</span><span class="prg-t">${esc(x.topik)}</span><span class="prg-cs">${chip(ac === 'live' ? 'ok' : ac, al)}${tg}${qz}</span></button>`;
+    }).join('') || '<div class="prg-empty">Belum ada pertemuan di pelajaran ini.</div>';
+    return `<div class="prg-card prg-rise${open ? ' open' : ''}" style="--i:${idx}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-ic" style="background:${d.col}">${d.ic}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}${s.held ? ` · Pertemuan ${s.held}/${tot}` : ''}</small></span>${pgRing(cp, '', 64)}<span class="prg-chev" aria-hidden="true">▾</span></button>
+      <div class="prg-ms">${pgMeter('🗓️', 'Kehadiran', `${s.hadir}/${s.held} · ${ap}%`, ap, 'ab')}${pgMeter('📝', 'Tugas & quiz selesai', `${s.done}/${s.tasks} · ${tp}%`, tp, 'tg')}</div>
+      <div class="prg-dots" aria-label="Pertemuan">${dots || '<span class="prg-empty">Belum ada pertemuan.</span>'}</div>
+      <div class="prg-det"><div class="prg-in"><div class="prg-leg"><span><i class="ok"></i>Hadir</span><span><i class="no"></i>Terlewat/Alpa</span><span><i class="iz"></i>Izin</span><span><i class="wait"></i>Belum</span></div>${detail}<div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="go('course','${m.id}')">Buka pelajaran →</button></div></div></div></div>`;
+  }).join('');
+  return pgHero(lic, ltl, lsub, chips, pgRing(all, 'keseluruhan', 132)) + badges + `<h2 class="prg-h">Per pelajaran <small>tekan kartu untuk rincian</small></h2><div class="prg-list">${cards}</div>`;
+}
+function progressD(L) {
+  const cmb = a => pgComb(a.h, a.hd, a.d, a.t);
+  const Z = () => ({ h: 0, hd: 0, d: 0, t: 0, n: 0, att: 0 });
+  const G = Z();
+  const cards = L.map((m, idx) => {
+    const M = Z(), d = dec(m);
+    const krows = m.kelas.map(k => {
+      const ss = studentsOf(m.id, k.id), K = Z(); K.n = ss.length;
+      const ps = ss.map(u => { const s = stats(m, u.email); K.h += s.hadir; K.hd += s.held; K.d += s.done; K.t += s.tasks; return { u, s, c: pgComb(s.hadir, s.held, s.done, s.tasks) }; }).sort((a, b) => a.c - b.c);
+      const low = ps.filter(q => (q.s.held || q.s.tasks) && q.c < 50).length; K.low = low;
+      M.h += K.h; M.hd += K.hd; M.d += K.d; M.t += K.t; M.n += K.n; M.low = (M.low || 0) + low;
+      const key = 'prg-k-' + k.id, open = !!S.open[key], ap = pgPct(K.h, K.hd), tp = pgPct(K.d, K.t), cp = cmb(K);
+      const plist = ps.map(q => `<div class="prg-pr"><div class="prg-pw"><b>${esc(q.u.nama)}</b><span>${esc(q.u.id)}</span></div><div class="prg-pm">${pgMeter('🗓️', 'Hadir', `${q.s.hadir}/${q.s.held}`, pgPct(q.s.hadir, q.s.held), 'ab')}${pgMeter('📝', 'Tugas/quiz', `${q.s.done}/${q.s.tasks}`, pgPct(q.s.done, q.s.tasks), 'tg')}</div>${(q.s.held || q.s.tasks) && q.c < 50 ? '<span class="chip c-no">Perlu perhatian</span>' : (q.s.held || q.s.tasks) && q.c >= 80 ? '<span class="chip c-ok">Baik</span>' : ''}</div>`).join('') || '<div class="prg-empty">Belum ada partisipan yang bergabung.</div>';
+      return `<div class="prg-k${open ? ' open' : ''}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-kn">${esc(k.nama.trim().slice(-1).toUpperCase())}</span><span class="prg-nm"><b>${esc(k.nama)}</b><small>${K.n} partisipan · Pertemuan ${k.pert.length}/${totalOf(k)}${low ? ` · <em>${low} perlu perhatian</em>` : ''}</small></span><span class="prg-mini">${pgMeter('🗓️', 'Hadir', ap + '%', ap, 'ab')}${pgMeter('📝', 'Tugas/quiz', tp + '%', tp, 'tg')}</span><span class="prg-chev" aria-hidden="true">▾</span></button>
+        <div class="prg-det"><div class="prg-in"><div class="prg-plist">${plist}</div><div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="bukaKelasDari('${m.id}','${k.id}')">Buka kelas →</button></div></div></div></div>`;
+    }).join('') || '<div class="prg-empty">Belum ada kelas di pelajaran ini.</div>';
+    G.h += M.h; G.hd += M.hd; G.d += M.d; G.t += M.t; G.n += M.n; G.low = (G.low || 0) + (M.low || 0);
+    return `<div class="prg-card prg-rise" style="--i:${idx}"><div class="prg-top static"><span class="prg-ic" style="background:${d.col}">${d.ic}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${m.kelas.length} kelas · ${M.n} partisipan</small></span>${pgRing(cmb(M), '', 64)}</div>${krows}</div>`;
+  }).join('');
+  const all = cmb(G), has = G.hd > 0 || G.t > 0, [lic, ltl, lsub] = pgLevel(all, has);
+  const chips = `<span class="prg-chip">🎒 ${G.n} partisipan</span><span class="prg-chip">🗓️ Rata-rata hadir ${pgPct(G.h, G.hd)}%</span><span class="prg-chip">📝 Tugas/quiz ${pgPct(G.d, G.t)}%</span>${G.low ? `<span class="prg-chip alert">⚠️ ${G.low} perlu perhatian</span>` : (has ? '<span class="prg-chip ok">✅ Semua partisipan baik</span>' : '')}`;
+  return pgHero(lic, ltl, has ? 'Rata-rata kelas-kelasmu. Buka kelas untuk melihat siapa yang butuh perhatian.' : lsub, chips, pgRing(all, 'rata-rata', 132)) + `<h2 class="prg-h">Per pelajaran <small>tekan kelas untuk melihat partisipan</small></h2><div class="prg-list">${cards}</div>`;
+}
+// Angka di halaman Progres naik perlahan dari 0 (dimatikan bila pengguna memilih mengurangi animasi)
+function prgFx() {
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  document.querySelectorAll('#view [data-count]').forEach(el => {
+    const to = +el.dataset.count; if (!(to > 0)) return;
+    const t0 = performance.now(), dur = 1000;
+    const tick = now => { const k = Math.min(1, (now - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))); if (k < 1 && el.isConnected) requestAnimationFrame(tick); };
+    el.textContent = 0; requestAnimationFrame(tick);
+  });
 }
 // Pengaturan: akun, tampilan, pengingat, panduan, bantuan
 function setPref(k, v) {
@@ -1762,7 +1838,7 @@ function render() {
   renderNav();
   const v = S.view;
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
-  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx();
+  $('#view').classList.toggle('is-home', v === 'home'); topInfo(); if (v === 'home') fx(); if (v === 'progress') prgFx();
 }
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
