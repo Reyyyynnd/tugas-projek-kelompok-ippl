@@ -1273,3 +1273,116 @@ nav a.on .ni:not(svg),nav button.on .ni:not(svg){background:#ffffff66}
   html.sb-min nav a,html.sb-min nav button{padding:6px 0}
   html.sb-min .out .keluar{padding:8px 0}
 }
+
+
+/* ===== Jadwal pelajaran: kartu pengingat (Beranda) + halaman jadwal lengkap ===== */
+.card.jd{--jc:#2f6fed;position:relative;overflow:hidden;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:16px;padding:16px 20px;background:linear-gradient(110deg,#f3fbd9,#e8f6ec 60%,#e8f1ff);border-color:#d3e5c0;animation:jdRise .5s cubic-bezier(.2,.8,.2,1) backwards}
+.card.jd::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--jc)}
+.jd-ic{flex:none;width:48px;height:48px;border-radius:14px;background:#fff;display:grid;place-items:center;font-size:24px;box-shadow:0 3px 10px #0c2a1f1a;animation:jdWob 4s ease-in-out infinite}
+.jd.on .jd-ic{animation:jdRing 1.4s ease-in-out infinite}
+.jd-tx{flex:1;min-width:200px}
+.jd-k{display:block;font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--g7)}
+.jd-t{display:block;font-size:18px;margin:2px 0 4px;overflow-wrap:anywhere}
+.jd-m{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;font-size:13.5px;color:#3c5348}
+.jd-when{font-weight:600}
+.jd-by{display:block;margin-top:4px;color:#5b6f64}
+.jd-cd{display:inline-block;padding:4px 12px;border-radius:99px;background:#fff;border:1px solid #cfdcd3;color:var(--g8);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.jd-cd.soon{background:#fff0d2;border-color:#f3d79b;color:#9a6508}
+.jd-cd.live{background:var(--lime);border-color:var(--lime);color:var(--g9);animation:jdPulse 2s ease-in-out infinite}
+.jd-btn{flex:none;white-space:nowrap}
+.jd-none{background:#f6f8f6;border-color:#e3eae5}
+.jd-none .jd-ic{animation:none;filter:grayscale(.6)}
+.jd-none::before{background:#c9d4cd}
+.jd-big{margin:0 0 6px}
+.jd-week{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-top:16px}
+.jd-day{background:#fff;border:1px solid #e3eae5;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:8px;animation:jdRise .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(var(--i,0)*.06s)}
+.jd-day header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px}
+.jd-day header b{font-size:15px}
+.jd-today{padding:2px 10px;border-radius:99px;background:var(--lime);color:var(--g9);font-size:11px;font-weight:800}
+.jd-day.now{border-color:var(--lime);box-shadow:0 0 0 3px #c5f04a40}
+.jd-day.none{background:#f8faf8;border-style:dashed}
+.jd-free{margin:0;padding:6px 4px;color:#8a9a91;font-size:12.5px}
+.jd-it{--jc:#2f6fed;display:grid;gap:2px;text-align:left;width:100%;padding:10px 12px;border-radius:12px;border:1px solid #e3eae5;border-left:4px solid var(--jc);background:#fbfdfb;color:inherit;font:inherit;cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s}
+.jd-it:hover,.jd-it:focus-visible{transform:translateY(-2px);box-shadow:0 8px 18px #0c2a1f1a;border-color:var(--jc)}
+.jd-it.next{background:#f3fbd9;border-color:#cfe58a;border-left-color:var(--jc)}
+.jd-tm{font-size:12.5px;font-weight:800;color:var(--g8);font-variant-numeric:tabular-nums}
+.jd-it b{font-size:14px;overflow-wrap:anywhere}
+.jd-it small{color:#5b6f64;font-size:12px}
+.jd-nolist{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.sx-chip.jd{background:#e8f1ff;color:#1d4fa3}
+@keyframes jdRise{from{opacity:0;transform:translateY(14px)}}
+@keyframes jdWob{0%,100%{transform:rotate(0)}8%{transform:rotate(-10deg)}16%{transform:rotate(8deg)}24%{transform:rotate(0)}}
+@keyframes jdRing{0%,100%{transform:rotate(0)}15%{transform:rotate(-14deg)}30%{transform:rotate(12deg)}45%{transform:rotate(-8deg)}60%{transform:rotate(0)}}
+@keyframes jdPulse{0%,100%{box-shadow:0 0 0 0 #c5f04a99}50%{box-shadow:0 0 0 6px #c5f04a00}}
+@media(max-width:560px){.card.jd{padding:14px 14px 14px 18px}.jd-btn{width:100%}}
+@media(prefers-reduced-motion:reduce){.card.jd,.jd-ic,.jd-cd,.jd-day{animation:none!important}.jd-it{transition:none}}
+
+
+/* ===== Form pengajar: pilihan hari + jam untuk jadwal ===== */
+.jb{display:grid;gap:8px}
+.jb>span{font-weight:700}
+.jb .quote{margin:0;font-size:12.5px}
+.jb-note{padding:8px 12px;border-radius:10px;background:#fff6dd;color:#8a5a00}
+.jb-list{display:grid;gap:8px}
+.jb-list:empty::before{content:"Belum ada jadwal. Tekan “+ Tambah hari” untuk mengisinya.";color:#7a8c82;font-size:13px;font-weight:400}
+.jb-row{display:grid;grid-template-columns:minmax(104px,1.2fr) 1fr auto 1fr auto;gap:8px;align-items:center;animation:jdRise .3s cubic-bezier(.2,.8,.2,1)}
+.jb-row select,.jb-row input{font:inherit;font-weight:400;padding:10px 12px;border:1px solid #cdd8d1;border-radius:9px;background:#fff;color:var(--tx);width:100%;min-width:0}
+.jb-row select:focus,.jb-row input:focus{outline:3px solid #2f6fed55;border-color:var(--blue)}
+.jb-sep{color:#6a7c72;font-size:13px;font-weight:400}
+.jb-x{width:38px;height:38px;border-radius:10px;border:1px solid #e8c4c4;background:#fff5f5;color:#b03a3a;font-size:20px;line-height:1;cursor:pointer;transition:background .2s,transform .2s}
+.jb-x:hover{background:#fdeaea;transform:scale(1.06)}
+.jb-add{justify-self:start}
+.jb-add:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:560px){.jb-row{grid-template-columns:1fr 1fr auto}.jb-d{grid-column:1/3}.jb-x{grid-column:3;grid-row:1}.jb-sep{display:none}}
+@media(prefers-reduced-motion:reduce){.jb-row{animation:none}}
+
+
+/* ===== Segera berakhir: sisa waktu ===== */
+.chip.soon-cd{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip.soon-cd.hot{background:#fde4e4;color:#b32f2f;animation:jdPulse 2s ease-in-out infinite}
+
+/* ===== Halaman jadwal: bagian atas dibuat lebih jelas ===== */
+.pg-hero.jd-hero{background:linear-gradient(120deg,#0c2a1f 0%,#1d4d3a 55%,#2a6b4f 100%);background-size:100% 100%;animation:none;border-color:#0c2a1f;color:#fff;padding:26px 30px;box-shadow:0 12px 28px #0c2a1f33}
+.jd-hero h1{color:#fff;font-size:32px;letter-spacing:-.4px;margin:10px 0 4px}
+.jd-hero .quote{color:#d3e8da;margin:0}
+.jd-hero .pgd{font-size:36px;opacity:1;filter:drop-shadow(0 4px 8px #0006)}
+.jd-hero .pgd.d1{right:22%;top:14px}.jd-hero .pgd.d2{right:11%;bottom:14px}.jd-hero .pgd.d3{right:3%;top:18px}
+.jd-date{display:inline-block;padding:4px 12px;border-radius:99px;background:var(--lime);color:var(--g9);font-size:12px;font-weight:800}
+.jd-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.jd-stat{padding:6px 14px;border-radius:99px;background:#ffffff24;border:1px solid #ffffff40;color:#fff;font-size:13px;font-weight:700}
+.card.jd.jd-big{background:#fff;border:2px solid var(--jc);box-shadow:0 10px 26px #0c2a1f1f;padding:20px 24px}
+.jd-big::before{width:8px}
+.jd-big .jd-ic{width:60px;height:60px;font-size:30px;background:var(--limeS)}
+.jd-big .jd-k{display:inline-block;padding:3px 10px;border-radius:99px;background:var(--g8);color:#fff;margin-bottom:6px}
+.jd-big .jd-t{font-size:24px}
+.jd-big .jd-when{font-size:15px;font-weight:800;color:var(--g9)}
+.jd-big .jd-cd{font-size:13px;border-color:var(--g7)}
+@media(max-width:560px){.jd-hero h1{font-size:26px}.jd-hero .pgd{display:none}}
+
+
+/* ===== Jadwal: kartu "Berikutnya" diperkecil + kolom hari dibuat jelas ===== */
+.card.jd.jd-big{padding:12px 18px;gap:14px;margin:0 0 4px}
+.jd-big::before{width:6px}
+.jd-big .jd-ic{width:44px;height:44px;font-size:22px;border-radius:12px}
+.jd-big .jd-tx{min-width:180px}
+.jd-big .jd-k{font-size:10.5px;padding:2px 9px;margin-bottom:3px}
+.jd-big .jd-t{font-size:19px;margin:0 0 2px}
+.jd-big .jd-m{gap:6px 10px}
+.jd-big .jd-when{font-size:14px}
+.jd-big .jd-cd{font-size:12.5px;padding:3px 10px}
+.jd-big .jd-by{margin-top:2px;font-size:12px}
+.jd-big .jd-btn{padding:8px 14px;font-size:13.5px}
+
+.jd-week{grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-top:14px}
+.jd-day{padding:0;gap:0;overflow:hidden;background:#fff;border:1.5px solid #b9cbbf;border-style:solid;border-radius:14px;box-shadow:0 4px 12px #0c2a1f14}
+.jd-day header{padding:9px 14px;background:var(--g8);color:#fff}
+.jd-day header b{color:#fff;font-size:14.5px}
+.jd-day>.jd-it{margin:10px 10px 0;width:auto}
+.jd-day>:last-child{margin-bottom:10px}
+.jd-day.none{background:#f2f6f3;border-style:solid}
+.jd-day.none header{background:#6f8478}
+.jd-free{margin:0;padding:12px 14px;color:#566a5f;font-size:13px}
+.jd-day.now{border-color:var(--g8);box-shadow:0 0 0 3px #c5f04a80}
+.jd-day.now header{background:var(--lime)}
+.jd-day.now header b{color:var(--g9)}
+.jd-day.now .jd-today{background:var(--g9);color:#fff}

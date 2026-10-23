@@ -193,7 +193,7 @@ function toast(t) {
 
 const PAGE=document.body.dataset.page;
 // Preferensi pengguna disimpan di data akunnya (u.pref): ukuran teks, pengingat, dan penanda panduan awal sudah dilihat (tour)
-const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, tour: false, rm: false, dh: 24, ...((u && u.pref) || {}) });
+const prefOf = u => ({ fs: 'normal', dl: true, ab: true, nl: true, jd: true, tour: false, rm: false, dh: 72, ...((u && u.pref) || {}) });
 function applyPref() {
   const u = Auth.session(), pf = prefOf(u), r = document.documentElement; if (!r) return;
   r.setAttribute('data-fs', pf.fs); r.classList.toggle('no-anim', !!pf.rm);   // ukuran teks & mode kurangi animasi
@@ -225,7 +225,7 @@ const TOTAL = 16, MAXP = 50;   // TOTAL = jumlah pertemuan bawaan; tiap kelas bi
 const totalOf = k => Math.min(MAXP, Math.max(1, Math.floor(+(k && k.total)) || TOTAL));
 const cekTotal = v => { const t = Number(v); return Number.isInteger(t) && t >= 1 && t <= MAXP ? t : 0; };
 let U = null, isDosen = false;   // diisi setelah data dari Supabase dimuat (lihat bagian paling bawah)
-// view: home | courses | course (satu pelajaran) | kelas (satu kelas) | pert (pertemuan kelas) | progress | settings
+// view: home | courses | course (satu pelajaran) | kelas (satu kelas) | pert (pertemuan kelas) | progress | settings | jadwal (jadwal lengkap partisipan)
 const S = { view: 'home', cid: null, kid: null, open: {}, edit: null, draft: {}, pf: null, pfKey: null };   // draft = lampiran tugas yang belum dikirim
 
 // Data: pelajaran -> kelas[] -> pert[] (pertemuan milik kelas). Keanggotaan & progres terpisah.
@@ -545,11 +545,28 @@ function ringkas(u) {
   return { mine: L, tiles: [[L.length, 'Pelajaran diikuti'], [hadir + '/' + held, 'Pertemuan dihadiri'], [held ? Math.round(hadir / held * 100) + '%' : '—', 'Tingkat kehadiran'], [done + '/' + tasks, 'Tugas & quiz selesai'], [tasks - done, 'Perlu dikerjakan'], [avg, 'Rata-rata nilai tugas']] };
 }
 
-// Tugas/quiz yang batasnya kurang dari 24 jam lagi
-const soonHtml = (todo, pf) => {
-  const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < (pf.dh || 24) * 36e5);
-  return t.length ? `<h2>⏰ Segera berakhir</h2>${t.map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip c-no">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '';
+// Tugas/quiz yang batasnya sudah dekat (jendela bawaan 72 jam = 3 hari, bisa diubah di Pengaturan > Pengingat). Chip menampilkan sisa waktu dalam jam.
+const soonTxt = dl => {
+  const mins = Math.ceil((dl - Date.now()) / 60000);
+  if (mins <= 0) return 'Waktu habis';
+  if (mins < 60) return 'Tinggal ' + mins + ' menit lagi';
+  const h = Math.floor(mins / 60), mm = mins % 60;
+  return 'Tinggal ' + h + ' jam' + (h < 6 && mm ? ' ' + mm + ' menit' : '') + ' lagi';
 };
+const soonHtml = (todo, pf) => {
+  const now = Date.now(), t = pf.dl === false ? [] : todo.filter(([m, x, k, dl]) => dl && dl > now && dl - now < (pf.dh || 72) * 36e5).sort((a, b) => a[3] - b[3]);
+  return t.length ? `<h2>⏰ Segera berakhir</h2>${t.map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip c-no">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span><span class="chip c-iz soon-cd${dl - now < 3 * 36e5 ? ' hot' : ''}" data-dl="${dl}" title="Batas: ${esc(fmtDt(dl))}">${soonTxt(dl)}</span></button>`).join('')}` : '';
+};
+// Detak tiap detik: sisa waktu di "Segera berakhir" ikut berjalan; yang sudah lewat batas dihapus dari daftar
+function soonTick() {
+  let lewat = false;
+  document.querySelectorAll('.soon-cd').forEach(el => {
+    const dl = +el.dataset.dl, ms = dl - Date.now();
+    if (ms <= 0) { lewat = true; return; }
+    el.textContent = soonTxt(dl); el.classList.toggle('hot', ms < 3 * 36e5);
+  });
+  if (lewat && S.view === 'home') render();
+}
 // ---------- elemen Beranda: hero dengan langit animasi, kutipan bergilir, bilah atas ----------
 const sapa = () => { const h = new Date().getHours(); return h < 11 ? ['Selamat pagi', '🌅'] : h < 15 ? ['Selamat siang', '☀️'] : h < 18 ? ['Selamat sore', '🌇'] : ['Selamat malam', '🌙']; };
 const tglID = () => new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -644,6 +661,99 @@ function fx() {
   });
 }
 
+// ===== Jadwal pelajaran: pengingat jadwal berikutnya (Beranda) + halaman jadwal lengkap =====
+// Jadwal ditulis pengajar sebagai teks di data pelajaran (m.jadwal), mis. "Selasa 08.00–10.30" atau "Senin 08.00–09.40, Kamis 13.00–14.40".
+// Teks itu dibaca di sini; tidak ada kolom baru di database.
+const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const HARI_KEY = { minggu: 0, ahad: 0, senin: 1, sen: 1, selasa: 2, sel: 2, rabu: 3, rab: 3, kamis: 4, kam: 4, jumat: 5, jum: 5, sabtu: 6, sab: 6 };
+const hm = n => String(Math.floor(n / 60)).padStart(2, '0') + '.' + String(n % 60).padStart(2, '0');
+function parseJadwal(txt) {
+  const s = String(txt || '').toLowerCase().replace(/[’`´]/g, "'");
+  const re = /\b(senin|selasa|rabu|kamis|jum'?at|sabtu|minggu|ahad|sen|sel|rab|kam|jum|sab)\b|\b(\d{1,2})\s*[.:]\s*(\d{2})\b|\b(?:jam|pukul)\s*(\d{1,2})(?![.:\d])/g;
+  const out = [], seen = {}; let days = [], times = [], m;
+  const flush = () => {
+    days.forEach(d => {
+      let sm = times.length ? times[0] : null, em = times.length > 1 ? times[1] : null;
+      if (em != null && em <= sm) em = null;
+      const k = d + '|' + sm + '|' + em; if (!seen[k]) { seen[k] = 1; out.push({ day: d, sm, em }); }
+    });
+    days = []; times = [];
+  };
+  while ((m = re.exec(s))) {
+    if (m[1]) { if (days.length && times.length) flush(); days.push(HARI_KEY[m[1].replace("'", '')]); }
+    else {
+      const h = +(m[2] != null ? m[2] : m[4]), mi = m[3] != null ? +m[3] : 0;
+      if (h > 23 || mi > 59) continue;
+      if (times.length < 2) times.push(h * 60 + mi);
+    }
+  }
+  flush();
+  return out;
+}
+const jdRange = s => s.sm == null ? '' : hm(s.sm) + (s.em != null ? '–' + hm(s.em) : '');
+// Sesi terdekat dari semua pelajaran: yang sedang berlangsung, atau yang paling cepat dimulai (maks. 7 hari ke depan)
+function nextJadwal(L, now) {
+  now = now || new Date(); const t = now.getTime(); let best = null;
+  L.forEach(m => parseJadwal(m.jadwal).forEach(s => {
+    for (let off = 0; off <= 7; off++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
+      if (d.getDay() !== s.day) continue;
+      const b = d.getTime(), dayOnly = s.sm == null, start = b + (dayOnly ? 0 : s.sm * 60000);
+      const end = dayOnly ? b + 86400000 : s.em != null ? b + s.em * 60000 : start;
+      if (dayOnly ? end <= t : s.em != null ? end <= t : start <= t) continue;   // sudah lewat
+      const ongoing = !dayOnly && s.em != null && start <= t;
+      const key = dayOnly ? b + 86400000 - 1 : start;
+      if (!best || key < best.key) best = { m, s, d, off, start, end, key, ongoing, dayOnly };
+      break;
+    }
+  }));
+  return best;
+}
+const jdKey = c => c ? c.m.id + ':' + c.start + ':' + (c.ongoing ? 1 : 0) : '';
+const jdTgl = d => HARI[d.getDay()] + ', ' + d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+const jdWhen = c => jdTgl(c.d) + (c.s.sm != null ? ' · ' + jdRange(c.s) : '');
+function jdCount(c) {
+  if (c.ongoing) return { txt: 'Sedang berlangsung', cls: 'live' };
+  if (c.dayOnly) return { txt: c.off === 0 ? 'Hari ini' : c.off === 1 ? 'Besok' : c.off + ' hari lagi', cls: c.off === 0 ? 'live' : '' };
+  const mins = Math.max(1, Math.ceil((c.start - Date.now()) / 60000));
+  if (mins < 60) return { txt: mins <= 1 ? 'Dimulai sebentar lagi' : 'Dimulai dalam ' + mins + ' menit', cls: 'soon' };
+  if (c.off === 0) { const h = Math.floor(mins / 60), mm = mins % 60; return { txt: 'Dimulai dalam ' + h + ' jam' + (mm ? ' ' + mm + ' menit' : ''), cls: '' }; }
+  return { txt: c.off === 1 ? 'Besok' : c.off + ' hari lagi', cls: '' };
+}
+const jdLive = c => { const k = jdCount(c); return `<span class="jd-cd ${k.cls}" id="jdLive" data-k="${esc(jdKey(c))}" aria-live="off">${k.txt}</span>`; };
+// Kartu pengingat di Beranda (partisipan)
+function jdCard(L, pf) {
+  if (pf.jd === false) return '';
+  const c = nextJadwal(L), btn = '<button class="btn lime jd-btn" onclick="go(\'jadwal\')">Lihat selengkapnya →</button>';
+  if (!c) return `<div class="card jd jd-none"><div class="jd-ic" aria-hidden="true">📅</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">Belum ada jadwal yang terbaca</b><div class="jd-m"><span class="jd-when">Pengingat muncul di sini setelah pengajar mengisi jadwal pelajaran.</span></div></div>${btn}</div>`;
+  const d = dec(c.m);
+  return `<div class="card jd${c.ongoing ? ' on' : ''}" style="--jc:${d.col}"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div></div>${btn}</div>`;
+}
+// Detak tiap detik: ubah teks hitung mundur; bila sesi berganti (mulai/selesai), gambar ulang
+function jdTick() {
+  const el = document.getElementById('jdLive'); if (!el || isDosen) return;
+  const c = nextJadwal(myMk());
+  if (!c || jdKey(c) !== el.dataset.k) { render(); return; }
+  const k = jdCount(c); el.textContent = k.txt; el.className = 'jd-cd ' + k.cls;
+}
+// Halaman jadwal lengkap (partisipan)
+function jadwalPage() {
+  if (isDosen) { S.view = 'home'; return home(); }
+  const L = myMk(), c = nextJadwal(L), today = new Date().getDay(), by = {}, none = [];
+  L.forEach(m => { const sl = parseJadwal(m.jadwal); if (!sl.length) none.push(m); sl.forEach(s => (by[s.day] = by[s.day] || []).push({ m, s })); });
+  const back = `<button class="back" onclick="go('home')"><span class="arr" aria-hidden="true">←</span> Kembali ke Beranda</button>`;
+  const nSesi = Object.values(by).reduce((a, x) => a + x.length, 0), nHari = (by[today] || []).length;
+  const top = `<section class="pg-hero jd-hero"><span class="pgd d1" aria-hidden="true">📅</span><span class="pgd d2" aria-hidden="true">⏰</span><span class="pgd d3" aria-hidden="true">🗓️</span><div class="pgh-txt"><span class="jd-date">${tglID()}</span><h1>Jadwal pelajaran</h1><p class="quote">Jadwal mingguan semua pelajaran yang kamu ikuti.</p><div class="jd-stats"><span class="jd-stat">${L.length} pelajaran</span><span class="jd-stat">${nSesi} sesi per minggu</span><span class="jd-stat">${nHari} sesi hari ini</span></div></div></section>`;
+  if (!L.length) return back + top + empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar, lalu jadwal pelajarannya muncul di sini.', btnJoin);
+  const nx = c ? `<div class="card jd jd-big${c.ongoing ? ' on' : ''}" style="--jc:${dec(c.m).col}"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div><small class="jd-by">Pengajar: ${esc(c.m.dosenNama)}</small></div><button class="btn ghost jd-btn" onclick="go('course','${c.m.id}')">Buka pelajaran →</button></div>` : '';
+  const days = [1, 2, 3, 4, 5, 6, 0].map((dn, i) => {
+    const it = (by[dn] || []).sort((a, b) => (a.s.sm == null ? 1e4 : a.s.sm) - (b.s.sm == null ? 1e4 : b.s.sm));
+    return `<section class="jd-day${dn === today ? ' now' : ''}${it.length ? '' : ' none'}" style="--i:${i}"><header><b>${HARI[dn]}</b>${dn === today ? '<span class="jd-today">Hari ini</span>' : ''}</header>${it.length ? it.map(({ m, s }) => { const d = dec(m); return `<button type="button" class="jd-it${c && c.m.id === m.id && c.s === s ? ' next' : ''}" style="--jc:${d.col}" onclick="go('course','${m.id}')"><span class="jd-tm">${s.sm != null ? jdRange(s) : 'Sepanjang hari'}</span><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}</small></button>`; }).join('') : '<p class="jd-free">Tidak ada jadwal</p>'}</section>`;
+  }).join('');
+  const nn = none.length ? `<h2>Belum ada jadwal</h2><div class="jd-nolist">${none.map(m => `<button type="button" class="jd-it" style="--jc:${dec(m).col}" onclick="go('course','${m.id}')"><b>${esc(m.nama)}</b><small>${m.jadwal ? 'Jadwal tertulis “' + esc(m.jadwal) + '” belum terbaca otomatis. Tanyakan ke pengajar agar jadwalnya diisi ulang.' : 'Pengajar belum mengisi jadwal.'}</small></button>`).join('')}</div>` : '';
+  return back + top + nx + `<div class="jd-week">${days}</div>` + nn;
+}
+
 function home() {
   const L = myMk();
   if (isDosen) {
@@ -663,6 +773,7 @@ function home() {
   const subTodo = !t.todo ? 'Semua sudah beres 🎉' : t.todoT && t.todoQ ? `${t.todoT} tugas · ${t.todoQ} quiz belum selesai` : t.todoT ? 'Belum dikirim' : 'Belum dikerjakan';
   const subHadir = t.held ? `Hadir ${t.hadir} kali dari ${t.held} pertemuan` + (t.lewat ? ` · <b style="color:var(--red)">terlewat ${t.lewat}</b>` : '') : 'Belum ada pertemuan';
   return hero + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
+    + jdCard(L, pf)
     + soonHtml(todo, pf)
     + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', t.done, '✅', '#dff5e8', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
     + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
@@ -710,7 +821,7 @@ function bukaItem(mkId, n) { S.view = 'course'; S.cid = mkId; S.open[mkId + '-' 
 // ---------- MATA KULIAH ----------
 function coursesPage() {
   const L = myMk();
-  const act = isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<button class="btn lime" onclick="joinModal()">+ Masuk kelas</button>';
+  const act = isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<div class="row"><button class="btn ghost" onclick="go(\'jadwal\')">📅 Jadwal</button><button class="btn lime" onclick="joinModal()">+ Masuk kelas</button></div>';
   const top = `<section class="pg-hero"><span class="pgd d1" aria-hidden="true">📚</span><span class="pgd d2" aria-hidden="true">✏️</span><span class="pgd d3" aria-hidden="true">🎒</span><div class="pgh-txt"><h1>Pelajaran</h1><p class="quote">${isDosen ? 'Arahkan kursor ke pelajaran untuk memilih kelasnya, atau klik pelajaran untuk melihat informasinya.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${act}</section>`;
   if (!L.length) return top + (isDosen ? empty('📚', 'Belum ada pelajaran', 'Buat pelajaran, lalu buat kelas beserta kode kelas untuk dibagikan ke partisipan.', btnMk) : empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar untuk melihat pelajaranmu.', btnJoin));
   return top + `<div class="pg-tools"><label class="pg-search"><span aria-hidden="true">🔍</span><input id="pSearch" type="search" placeholder="Cari pelajaran…" oninput="filterPelajaran(this.value)" autocomplete="off" aria-label="Cari pelajaran"></label><span class="pg-count" id="pCount">${L.length} pelajaran</span></div>${courseCards(L)}<p class="empty" id="pEmpty" hidden>Tidak ada pelajaran yang cocok.</p>`;
@@ -1537,12 +1648,45 @@ function mkModal(id) {
   if (id && (!m || m.dosen !== U.email)) return;
   modal(`<h3>${m ? 'Ubah pelajaran' : 'Buat pelajaran'}</h3><div class="quote">${m ? 'Perubahan langsung terlihat oleh partisipan di kelasmu.' : 'Setelah dibuat, kamu bisa membuat kelas A, B, C… beserta kodenya.'}</div>
   <div class="fg" style="margin-top:12px"><label class="f">Nama pelajaran<input id="mNama" placeholder="Pemrograman Berorientasi Objek" maxlength="60" value="${m ? esc(m.nama) : ''}"></label>
-  <div class="two"><label class="f">ID pelajaran (opsional)<input id="mKode" placeholder="mis. PLJ-01" maxlength="12" value="${m ? esc(m.kode || '') : ''}"></label><label class="f">Jadwal (opsional)<input id="mJadwal" placeholder="Selasa, 08.00–10.30" maxlength="40" value="${m ? esc(m.jadwal || '') : ''}"></label></div>
+  <label class="f">ID pelajaran (opsional)<input id="mKode" placeholder="mis. PLJ-01" maxlength="12" value="${m ? esc(m.kode || '') : ''}"></label>
+  ${jadwalField(m)}
   ${m !== undefined && isDosen ? warnaField(m) : ''}
   <p class="err" id="mErr" role="alert"></p>
   <div class="row"><button class="btn lime" onclick="createMk(${m ? `'${m.id}'` : ''})">${m ? 'Simpan perubahan' : 'Buat pelajaran'}</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
   if ($('#mClr')) warnaSet($('#mClr').dataset.v);
   $('#mNama').focus();
+}
+// Jadwal pelajaran dipilih lewat hari + jam (bukan diketik), lalu disimpan sebagai teks baku "Selasa 08.00–10.30, Kamis 13.00–14.40"
+// yang selalu terbaca oleh parseJadwal() untuk pengingat & halaman jadwal partisipan.
+const jbTm = n => n == null ? '' : String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+const jbRow = (d, s, e) => `<div class="jb-row"><select class="jb-d" aria-label="Hari">${[1, 2, 3, 4, 5, 6, 0].map(x => `<option value="${x}"${x === d ? ' selected' : ''}>${HARI[x]}</option>`).join('')}</select><input class="jb-s" type="time" value="${s || ''}" aria-label="Jam mulai"><span class="jb-sep">s/d</span><input class="jb-e" type="time" value="${e || ''}" aria-label="Jam selesai"><button type="button" class="jb-x" onclick="jbDel(this)" aria-label="Hapus hari ini" title="Hapus">×</button></div>`;
+function jadwalField(m) {
+  const sl = m ? parseJadwal(m.jadwal) : [];
+  const lama = m && m.jadwal && !sl.length ? `<p class="quote jb-note">Jadwal lama “${esc(m.jadwal)}” tidak terbaca otomatis. Pilih hari dan jam di bawah untuk menggantinya.</p>` : '';
+  return `<div class="f jb" id="mJb"><span>Jadwal pelajaran (opsional)</span>
+    <small class="quote">Pilih hari dan jam. Jadwal ini otomatis tampil sebagai pengingat dan di halaman jadwal partisipan.</small>${lama}
+    <div class="jb-list">${sl.map(x => jbRow(x.day, jbTm(x.sm), jbTm(x.em))).join('')}</div>
+    <button type="button" class="btn ghost jb-add" onclick="jbAdd()"${sl.length >= 7 ? ' disabled' : ''}>+ Tambah hari</button></div>`;
+}
+function jbSync() { const L = $('#mJb .jb-list'); $('#mJb .jb-add').disabled = L.children.length >= 7; }
+function jbAdd() {
+  const L = $('#mJb .jb-list'); if (L.children.length >= 7) return;
+  const used = [...L.querySelectorAll('.jb-d')].map(x => +x.value), d = [1, 2, 3, 4, 5, 6, 0].find(x => !used.includes(x));
+  L.insertAdjacentHTML('beforeend', jbRow(d, '', '')); jbSync();
+  L.lastElementChild.querySelector('.jb-s').focus();
+}
+function jbDel(b) { b.closest('.jb-row').remove(); jbSync(); }
+function jbRead() {
+  const min = v => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
+  const rows = [...document.querySelectorAll('#mJb .jb-row')].map(r => ({ d: +r.querySelector('.jb-d').value, s: r.querySelector('.jb-s').value, e: r.querySelector('.jb-e').value }));
+  for (const r of rows) {
+    if (!r.s || !r.e) return { err: 'Isi jam mulai dan jam selesai untuk hari ' + HARI[r.d] + ', atau hapus barisnya.' };
+    if (min(r.e) <= min(r.s)) return { err: 'Jam selesai hari ' + HARI[r.d] + ' harus lebih akhir dari jam mulainya.' };
+  }
+  const seen = {}, list = [];
+  rows.forEach(r => { const k = r.d + r.s + r.e; if (!seen[k]) { seen[k] = 1; list.push(r); } });
+  list.sort((a, b) => ((a.d + 6) % 7) - ((b.d + 6) % 7) || min(a.s) - min(b.s));
+  return { text: list.map(r => HARI[r.d] + ' ' + hm(min(r.s)) + '–' + hm(min(r.e))).join(', ') };
 }
 // Pilihan warna background pelajaran: palet cepat (termasuk putih & hitam), pemilih warna bebas, dan pratinjau langsung
 function warnaField(m) {
@@ -1568,7 +1712,8 @@ function createMk(id) {
   if (id && (!old || old.dosen !== U.email)) return;
   if (!nama) { e.textContent = 'Nama pelajaran wajib diisi.'; return; }
   if (st.mk().some(m => m.dosen === U.email && m.id !== id && m.nama.toLowerCase() === nama.toLowerCase())) { e.textContent = 'Kamu sudah punya pelajaran dengan nama ini.'; return; }
-  const data = { nama, kode: $('#mKode').value.trim(), jadwal: $('#mJadwal').value.trim() };
+  const jb = jbRead(); if (jb.err) { e.textContent = jb.err; return; }
+  const data = { nama, kode: $('#mKode').value.trim(), jadwal: jb.text };
   const warna = $('#mClr') ? hexOk($('#mClr').dataset.v) : '';
   if (warna) data.warna = warna;
   if (old) {
@@ -1813,7 +1958,7 @@ const ST_FAQ = {
 };
 // Kesiapan akun: tiap butir bisa ditekan untuk langsung menuntaskannya
 function stChecks() {
-  const pf = prefOf(U), rem = isDosen ? pf.nl !== false : (pf.ab !== false || pf.dl !== false);
+  const pf = prefOf(U), rem = isDosen ? pf.nl !== false : (pf.ab !== false || pf.dl !== false || pf.jd !== false);
   return [
     { ok: !!U.verified, t: 'Gmail terverifikasi', act: "go('profil')" },
     { ok: !!pf.tour, t: 'Panduan sudah dilihat', act: 'startTour()' },
@@ -1829,7 +1974,8 @@ function sxSample(pf) {
   if (isDosen) return pf.nl !== false ? '<span class="sx-chip warn">3 tugas menunggu penilaian</span>' : '<span class="sx-chip off">Pengingat dimatikan</span>';
   const c = [];
   if (pf.ab !== false) c.push('<span class="sx-chip live">Absen sedang dibuka</span>');
-  if (pf.dl !== false) c.push(`<span class="sx-chip warn">Batas tugas dalam ${pf.dh || 24} jam</span>`);
+  if (pf.dl !== false) c.push(`<span class="sx-chip warn">Batas tugas dalam ${pf.dh || 72} jam</span>`);
+  if (pf.jd !== false) c.push('<span class="sx-chip jd">Jadwal berikutnya · Selasa 08.00</span>');
   return c.join('') || '<span class="sx-chip off">Semua pengingat dimatikan</span>';
 }
 // penanda menu samping bergeser ke tab yang aktif
@@ -1870,7 +2016,7 @@ function stResetModal() {
   modal(`<h3>Kembalikan pengaturan awal?</h3><p class="quote">Ukuran teks, animasi, dan pengingat kembali ke bawaan. Akun, pelajaran, dan datamu tidak berubah.</p><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="stReset()">Ya, kembalikan</button></div>`);
 }
 function stReset() {
-  U.pref = { ...prefOf(U), fs: 'normal', rm: false, dh: 24, dl: true, ab: true, nl: true }; Auth.update(U.email, { pref: U.pref });
+  U.pref = { ...prefOf(U), fs: 'normal', rm: false, dh: 72, dl: true, ab: true, nl: true, jd: true }; Auth.update(U.email, { pref: U.pref });
   applyPref(); tutupModal(); render(); toast('Pengaturan dikembalikan ke awal');
 }
 function settings() {
@@ -1918,7 +2064,8 @@ function settings() {
         <div class="sx-2"><div class="sx-ctl">
           ${isD ? sw('bell', 'nl', 'Tugas perlu dinilai', 'Tampilkan jumlah tugas yang belum dinilai di Beranda.', pf.nl !== false)
             : sw('bell', 'ab', 'Absen dibuka', 'Tampilkan kartu Absen sekarang di Beranda saat pengajar membuka absen.', pf.ab !== false) + sw('bell', 'dl', 'Batas waktu segera berakhir', 'Tampilkan tugas dan quiz yang batas waktunya sudah dekat.', pf.dl !== false)
-              + `<div class="sx-blk"><div class="sx-lb">Jendela pengingat batas waktu</div>${seg('dh', [[6, '6 jam'], [12, '12 jam'], [24, '24 jam'], [48, '48 jam'], [72, '72 jam']], pf.dh || 24, false)}</div>`}
+              + sw('bell', 'jd', 'Jadwal pelajaran berikutnya', 'Tampilkan pengingat jadwal pelajaran terdekat di Beranda, lengkap dengan hitung mundurnya.', pf.jd !== false)
+              + `<div class="sx-blk"><div class="sx-lb">Jendela pengingat batas waktu</div>${seg('dh', [[6, '6 jam'], [12, '12 jam'], [24, '24 jam'], [36, '36 jam'], [48, '48 jam'], [72, '72 jam']], pf.dh || 72, false)}</div>`}
           <div class="sx-sample"><small>Contoh di Beranda</small><div id="sxSample">${sxSample(pf)}</div></div></div>
           <ol class="sx-steps">${steps.map(([t, d], i) => `<li style="--i:${i}"><span class="sx-sn">${i + 1}</span><div><b>${t}</b><small>${d}</small></div></li>`).join('')}</ol></div></section>
       <section class="sx-panel${tab === 'akun' ? ' on' : ''}" id="sxp-akun" role="tabpanel">${panelH('Akun', 'Data akunmu dan ringkasan aktivitas.')}
@@ -2041,7 +2188,7 @@ function endTour() {
   const pad = $('#trPad'); if (pad) pad.remove();
   if (U && !prefOf(U).tour) { U.pref = { ...prefOf(U), tour: true }; Auth.update(U.email, { pref: U.pref }); }
   const v0 = TOUR.v0; TOUR.v0 = null;
-  if (['home', 'courses', 'progress', 'settings'].includes(v0) && S.view !== v0) go(v0);   // kembali ke halaman semula
+  if (['home', 'courses', 'progress', 'settings', 'jadwal'].includes(v0) && S.view !== v0) go(v0);   // kembali ke halaman semula
   window.scrollTo(0, 0);
   const pv = TOUR.prev; TOUR.prev = null;
   if (pv && pv !== document.body && document.contains(pv) && pv.focus) pv.focus({ preventScroll: true });
@@ -2050,7 +2197,7 @@ function endTour() {
 // ---------- RENDER ----------
 function renderNav() {
   const it = [['home', '🏠', 'Beranda'], ['courses', '📚', 'Pelajaran'], ['progress', '📈', 'Progres'], ['settings', '⚙️', 'Pengaturan'], ['profil', '👤', 'Profil']];
-  const inCourses = ['courses', 'course', 'kelas', 'pert'].includes(S.view);
+  const inCourses = ['courses', 'course', 'kelas', 'pert', 'jadwal'].includes(S.view);
   $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" title="${l}" onclick="go('${v}')"><span class="ni">${i}</span><span class="nl">${l}</span></button>`).join('');
 }
 function go(v, id) {
@@ -2062,7 +2209,7 @@ function render() {
   hidePcTip();
   renderNav();
   const v = S.view;
-  $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : settings();
+  $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : v === 'jadwal' ? jadwalPage() : settings();
   $('#view').classList.toggle('is-home', v === 'home'); topInfo(); document.body.classList.toggle('me-off', v === 'settings'); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
   if (v === 'settings') { sxInd(); requestAnimationFrame(sxInd); }
 }
@@ -2075,7 +2222,7 @@ function initBeranda() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
   const h = location.hash.slice(1);
-  if (['home', 'courses', 'progress', 'settings'].includes(h)) S.view = h;
+  if (['home', 'courses', 'progress', 'settings', 'jadwal'].includes(h)) S.view = h;
   const paksaTur = h === 'tour';
   if (paksaTur) history.replaceState(null, '', location.pathname + location.search);
   setMe(U);
@@ -2089,7 +2236,7 @@ function initBeranda() {
       const ms = +el.getAttribute('data-exp') - Date.now();
       if (ms <= 0) { if (isDosen) el.textContent = '00:00'; else habis = true; } else el.textContent = fmt(ms);
     });
-    if (habis) render();
+    if (habis) render(); else { jdTick(); soonTick(); }
   }, 1000);
 }
 
