@@ -2126,6 +2126,7 @@ function tourShow(i) {
   const s = TOUR.steps[i], n = TOUR.steps.length, last = i === n - 1, tip = $('#trTip');
   TOUR.i = i; TOUR.key = '';
   if (s.v && S.view !== s.v) go(s.v);   // buka halaman menu yang sedang dijelaskan
+  if (isPhone()) mnavSet(!!(s.t && /^#nav/.test(s.t)));   // di HP menu tersembunyi: buka hanya saat langkah menyorot menu
   tip.classList.toggle('mid', !s.t);
   tip.innerHTML = `<div class="tr-n">Langkah ${i + 1} dari ${n}</div><h3 id="trH">${s.h}</h3><p>${s.p}</p>${s.l ? '<ul>' + s.l.map(x => `<li>${x}</li>`).join('') + '</ul>' : ''}`;
   $('#trDots').innerHTML = TOUR.steps.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('');
@@ -2182,7 +2183,7 @@ function tourKey(e) {
 }
 function endTour() {
   if (!TOUR.on) return;
-  TOUR.on = false; cancelAnimationFrame(TOUR.raf);
+  TOUR.on = false; cancelAnimationFrame(TOUR.raf); mnavSet(false);
   document.removeEventListener('keydown', tourKey, true);
   const r = $('#tour'); if (r) r.remove();
   const pad = $('#trPad'); if (pad) pad.remove();
@@ -2565,6 +2566,28 @@ render();
 }
 
 /* ===== JALANKAN HALAMAN YANG AKTIF ===== */
+// Menu HP: nama "KelasBelajar" bisa ditekan untuk kembali ke Beranda, menu lain disembunyikan di balik tombol garis tiga.
+// Hanya berlaku pada layar HP (lebar 820px ke bawah); di PC tidak ada yang berubah.
+const isPhone = () => !!(window.matchMedia && matchMedia('(max-width:820px)').matches);
+function mnavSet(on) {
+  const aside = document.querySelector('aside'), btn = document.getElementById('mbtn'); if (!aside || !btn) return;
+  aside.classList.toggle('mopen', !!on); btn.setAttribute('aria-expanded', String(!!on)); btn.setAttribute('aria-label', on ? 'Tutup menu' : 'Buka menu');
+}
+function initMobileNav() {
+  const aside = document.querySelector('aside'), btn = document.getElementById('mbtn'), logo = document.querySelector('aside .logo');
+  if (!aside || !btn || btn.dataset.ok) return; btn.dataset.ok = '1';
+  const phone = isPhone, set = mnavSet;
+  btn.addEventListener('click', e => { e.stopPropagation(); set(!aside.classList.contains('mopen')); });
+  aside.addEventListener('click', e => { if (e.target.closest && e.target.closest('aside nav a, aside nav button')) set(false); });
+  document.addEventListener('click', e => { if (aside.classList.contains('mopen') && !(e.target.closest && e.target.closest('aside'))) set(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+  if (!logo) return;
+  const home = () => { if (!phone()) return; set(false); if (PAGE === 'beranda') go('home'); else location.href = 'index.html'; };
+  const sync = () => { if (phone()) { logo.setAttribute('role', 'link'); logo.setAttribute('tabindex', '0'); logo.setAttribute('aria-label', 'KelasBelajar, kembali ke Beranda'); } else { set(false); logo.removeAttribute('role'); logo.removeAttribute('tabindex'); logo.removeAttribute('aria-label'); } };
+  sync(); window.addEventListener('resize', sync);
+  logo.addEventListener('click', home);
+  logo.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); home(); } });
+}
 const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = footerHtml();   // login: tanpa footer
 (async function boot() {
   try {
@@ -2575,7 +2598,7 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
       initLogin(); initScrollHint(); return;
     }
     if (!(await loadAll())) { location.replace('login.html'); return; }
-    applyPref();
+    applyPref(); initMobileNav();
     if (PAGE === 'beranda') {
       U = Auth.session(); isDosen = U.role === 'Pengajar';
       initBeranda();

@@ -6,14 +6,16 @@
 <title>Profil – KelasBelajar</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=47">
+<link rel="stylesheet" href="desktop.css?v=47" media="(min-width:821px)">
+<link rel="stylesheet" href="mobile.css?v=47" media="(max-width:820px)">
 <script>try{if(localStorage.getItem('kb-sb')==='1')document.documentElement.classList.add('sb-min')}catch(e){}</script>
 </head>
 <body data-page="profil">
 <div class="app">
 <aside>
   <div class="logo"><img src="logo.svg" alt="" width="38" height="38"><div>KelasBelajar<small>Platform belajar dan mengajar untuk semua kalangan</small></div></div>
-    <nav>
+  <button type="button" class="mbtn" id="mbtn" aria-label="Buka menu" aria-expanded="false" aria-controls="mmenu"><span></span><span></span><span></span></button>
+    <nav id="mmenu">
     <a href="index.html#home" title="Beranda"><span class="ni">🏠</span><span class="nl">Beranda</span></a>
     <a href="index.html#courses" title="Pelajaran"><span class="ni">📚</span><span class="nl">Pelajaran</span></a>
     <a href="index.html#progress" title="Progres"><span class="ni">📈</span><span class="nl">Progres</span></a>
