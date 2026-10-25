@@ -133,9 +133,13 @@ async function refresh() {
 }
 
 // ---------- ALAMAT HALAMAN (URL) ----------
-// Di server (Vercel) alamat dibuat bersih: /beranda, /pelajaran/pbo, /login, /register, /profil. Di komputer sendiri (Live Server / file)
-// tidak ada aturan penulisan ulang dari server, jadi dipakai nama file + penanda #: index.html#/pelajaran/pbo, login.html#register.
-const HIST = /^https?:$/.test(location.protocol) && !/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+// Alamat dibuat bersih: /beranda, /pelajaran/pbo, /progres, /pengaturan, /profil, /login, /register.
+// - Di Vercel: aturannya ada di vercel.json.
+// - Di komputer sendiri: jalankan "node server.js" (membaca vercel.json yang sama), lalu buka http://localhost:3000.
+// - Bila dibuka lewat Live Server / file langsung (tanpa server.js) tidak ada aturan penulisan ulang, jadi dipakai nama file + penanda #:
+//   index.html#/pelajaran/pbo, login.html#register.
+const LOKAL = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+const HIST = /^https?:$/.test(location.protocol) && (!LOKAL || document.cookie.indexOf('kb-clean-' + location.port + '=1') >= 0);
 const pageHref = (name, rest = '') => HIST ? '/' + name + rest : name + '.html' + rest;      // halaman terpisah: login, profil
 const appHref = route => HIST ? route : 'index.html#' + route;                              // halaman di dalam aplikasi: /beranda, /pelajaran, ...
 const Auth = {
