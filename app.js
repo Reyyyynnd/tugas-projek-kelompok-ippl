@@ -132,6 +132,12 @@ async function refresh() {
   finally { REFRESHING = false; }
 }
 
+// ---------- ALAMAT HALAMAN (URL) ----------
+// Di server (Vercel) alamat dibuat bersih: /beranda, /pelajaran/pbo, /login, /register, /profil. Di komputer sendiri (Live Server / file)
+// tidak ada aturan penulisan ulang dari server, jadi dipakai nama file + penanda #: index.html#/pelajaran/pbo, login.html#register.
+const HIST = /^https?:$/.test(location.protocol) && !/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/.test(location.hostname);
+const pageHref = (name, rest = '') => HIST ? '/' + name + rest : name + '.html' + rest;      // halaman terpisah: login, profil
+const appHref = route => HIST ? route : 'index.html#' + route;                              // halaman di dalam aplikasi: /beranda, /pelajaran, ...
 const Auth = {
   users() { return CACHE.lms_users; },
   find(email) { const e = String(email || '').trim().toLowerCase(); return CACHE.lms_users.find(u => u.email === e); },
@@ -144,8 +150,8 @@ const Auth = {
     if (Object.keys(row).length) { WSEQ++; enqueue(async () => { const { error } = await sb.from('profiles').update(row).eq('uid', u.uid); if (error) throw error; }); }
     return u;
   },
-  requireLogin() { const u = this.session(); if (!u) location.replace('login.html'); return u; },
-  async logout() { try { await Q; await sb.auth.signOut(); } catch (e) {} location.href = 'login.html'; }
+  requireLogin() { const u = this.session(); if (!u) location.replace(pageHref('login')); return u; },
+  async logout() { try { await Q; await sb.auth.signOut(); } catch (e) {} location.href = pageHref('login'); }
 };
 
 // Ubah foto jadi persegi 320px (JPEG), unggah ke bucket 'foto', simpan alamatnya di profil, dan salin ke pelajaran milik pengajar
@@ -209,9 +215,9 @@ function setMe(u) {
   initTop(u);
 }
 const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
-// Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, panduan dibuka langsung; di halaman lain lewat index.html#tour.
+// Footer (tidak dipasang di halaman login): hanya Bantuan dan Hubungi kami. Di beranda, panduan dibuka langsung; di halaman lain lewat alamat beranda + #tour.
 function footerHtml() {
-  const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">📖 Panduan penggunaan</button>` : `<a class="fl" href="index.html#tour">📖 Panduan penggunaan</a>`;
+  const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">📖 Panduan penggunaan</button>` : `<a class="fl" href="${HIST ? '/beranda#tour' : 'index.html#tour'}">📖 Panduan penggunaan</a>`;
   return `<div class="fwrap">
     <span class="fcopy">© ${new Date().getFullYear()} · Semua hak dilindungi</span>
     <div class="fhelp">${tur}</div>
@@ -378,7 +384,7 @@ const fotoOk = f => /^https:\/\//.test(String(f || '')) ? f : '';
 const fotoOf = m => { const c = Auth.find(m.dosen); return fotoOk((c && c.pref && c.pref.foto) || m.dosenFoto); };
 const mkIc = (m, d) => { const f = fotoOf(m); return f ? `<img class="mk-ph" src="${esc(f)}" alt="" onerror="this.replaceWith(document.createTextNode('${d.ic}'))">` : d.ic; };
 const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
-const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="profil.html"><b>Verifikasi sekarang</b></a></div>';
+const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="' + pageHref('profil') + '"><b>Verifikasi sekarang</b></a></div>';
 const head = () => heroB() + banner();
 const empty = (ic, t, d, btn) => `<div class="card empty-s"><div class="big-ic">${ic}</div><h3>${t}</h3><p class="quote">${d}</p>${btn}</div>`;
 const sc = (l, v, ic, bg, c, sub, cls, act, pop) => `<div class="card stat${act ? ' click' : ''}"${act ? ` role="button" tabindex="0" onclick="${act}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"` : ''}><div><div class="l">${l}</div><div class="v"${c ? ` style="color:${c}"` : ''}>${typeof v === 'number' ? `<span class="cnt" data-to="${v}">${v}</span>` : v}</div>${sub ? `<div class="ssub">${sub}</div>` : ''}</div><div class="ic ${cls || ''}" style="background:${bg}">${ic}</div>${act ? '<span class="more">Lihat detail ›</span>' : ''}${pop || ''}</div>`;
@@ -1986,7 +1992,7 @@ function sxInd() {
   ind.style.setProperty('--w', b.offsetWidth + 'px'); ind.style.setProperty('--h', b.offsetHeight + 'px');
 }
 function sxTab(id) {
-  S.sxTab = id;
+  S.sxTab = id; syncUrl();
   document.querySelectorAll('.sx-tab').forEach(b => { const on = b.dataset.t === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
   document.querySelectorAll('.sx-panel').forEach(p => p.classList.toggle('on', p.id === 'sxp-' + id));
   sxInd();
@@ -2201,8 +2207,67 @@ function renderNav() {
   const inCourses = ['courses', 'course', 'kelas', 'pert', 'jadwal'].includes(S.view);
   $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" title="${l}" onclick="go('${v}')"><span class="ni">${i}</span><span class="nl">${l}</span></button>`).join('');
 }
+// Alamat yang unik untuk tiap pelajaran/kelas dibuat dari namanya (huruf kecil, spasi jadi tanda hubung); bila ada nama kembar ditambah kode.
+const slugify = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+function slugMap(list, label, extra) {
+  const base = {}, cnt = {}, out = {}, seen = {};
+  list.forEach(x => { const s = slugify(label(x)) || 'item'; base[x.id] = s; cnt[s] = (cnt[s] || 0) + 1; });
+  list.forEach(x => {
+    let s = base[x.id]; if (cnt[s] > 1 && slugify(extra(x))) s += '-' + slugify(extra(x));
+    if (seen[s]) s += '-' + slugify(String(x.id)).slice(0, 6);
+    seen[s] = 1; out[x.id] = s;
+  });
+  return out;
+}
+const mkSlugs = () => slugMap(myMk(), m => m.nama, m => m.kode);
+const klSlugs = m => slugMap(m.kelas, k => k.nama, k => k.kode);
+const SX_TABS = ['tampilan', 'pengingat', 'akun', 'bantuan'], PT_TABS = ['pertemuan', 'pengumpulan', 'absensi'];
+// state -> alamat
+function routeOf() {
+  const v = S.view;
+  if (v === 'home') return '/beranda'; if (v === 'courses') return '/pelajaran'; if (v === 'progress') return '/progres'; if (v === 'jadwal') return '/jadwal';
+  if (v === 'settings') { const t = SX_TABS.includes(S.sxTab) ? S.sxTab : 'tampilan'; return t === 'tampilan' ? '/pengaturan' : '/pengaturan/' + t; }
+  const m = myMk().find(x => x.id === S.cid); if (!m) return '/pelajaran';
+  let r = '/pelajaran/' + mkSlugs()[m.id]; if (v === 'course') return r;
+  const k = m.kelas.find(x => x.id === S.kid); if (!k) return r;
+  r += '/' + klSlugs(m)[k.id]; return v === 'kelas' ? r : r + '/' + (PT_TABS.includes(S.pTab) ? S.pTab : 'pertemuan');
+}
+// alamat -> state (alamat lama seperti #courses tetap dikenali)
+function applyRoute(path) {
+  const seg = String(path || '').split(/[?#]/)[0].replace(/^\/+|\/+$/g, '').split('/').filter(Boolean).map(s => { try { return decodeURIComponent(s); } catch (e) { return s; } });
+  const first = seg[0] || 'beranda';
+  const set = (v, o) => Object.assign(S, { view: v, edit: null, pfKey: null, delMode: false }, o || {});
+  if (first === 'pelajaran' || first === 'courses') {
+    const m = seg[1] ? myMk().find(x => mkSlugs()[x.id] === seg[1]) : null;
+    if (!m) return set('courses');
+    if (!seg[2]) return set('course', { cid: m.id });
+    const k = isDosen ? m.kelas.find(x => klSlugs(m)[x.id] === seg[2]) : null;
+    if (!k) return set('course', { cid: m.id });
+    if (!seg[3]) return set('kelas', { cid: m.id, kid: k.id });
+    return set('pert', { cid: m.id, kid: k.id, pTab: PT_TABS.includes(seg[3]) ? seg[3] : 'pertemuan' });
+  }
+  if (first === 'progres' || first === 'progress') return set('progress');
+  if (first === 'jadwal') return set('jadwal');
+  if (first === 'pengaturan' || first === 'settings') { set('settings'); S.sxTab = SX_TABS.includes(seg[1]) ? seg[1] : 'tampilan'; return; }
+  set('home');
+}
+const curRoute = () => (HIST ? location.pathname : (location.hash.slice(1).startsWith('/') ? location.hash.slice(1) : '')).replace(/\/+$/, '') || '/';
+let ROUTE_REPLACE = true;   // true: ganti alamat tanpa menambah riwayat (muat pertama dan tombol Kembali)
+function syncUrl() {
+  const r = routeOf(), v = S.view, m = myMk().find(x => x.id === S.cid);
+  const T = { home: 'Beranda', courses: 'Pelajaran', progress: 'Progres', jadwal: 'Jadwal', settings: 'Pengaturan' };
+  document.title = (T[v] || (m ? m.nama : 'Pelajaran')) + ' · KelasBelajar';
+  const ganti = ROUTE_REPLACE; ROUTE_REPLACE = false;
+  if (curRoute() === r) return;
+  history[ganti ? 'replaceState' : 'pushState'](null, '', HIST ? r : location.pathname + location.search + '#' + r);
+}
+// tautan statis di HTML memakai alamat bersih; di komputer lokal diganti ke nama file
+function fixLinks() {
+  document.querySelectorAll('a[data-go]').forEach(a => { a.setAttribute('href', pageHref(a.dataset.go)); });
+  document.querySelectorAll('a[data-route]').forEach(a => { a.setAttribute('href', appHref(a.dataset.route)); });
+}
 function go(v, id) {
-  if (v === 'profil') { location.href = 'profil.html'; return; }
+  if (v === 'profil') { location.href = pageHref('profil'); return; }
   S.view = v; S.edit = null; S.pfKey = null; if (id) S.cid = id;
   render(); window.scrollTo(0, 0); refresh();
 }
@@ -2213,6 +2278,7 @@ function render() {
   $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : v === 'jadwal' ? jadwalPage() : settings();
   $('#view').classList.toggle('is-home', v === 'home'); topInfo(); document.body.classList.toggle('me-off', v === 'settings'); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
   if (v === 'settings') { sxInd(); requestAnimationFrame(sxInd); }
+  syncUrl();
 }
 function tutupModal() { freePv(); $('#layer').innerHTML = ''; }
 function modal(h, cls) { $('#layer').innerHTML = `<div class="modal" onclick="if(event.target===this)tutupModal()"><div class="sheet ${cls || ''}" role="dialog" aria-modal="true"><button class="xbtn" onclick="tutupModal()" aria-label="Tutup jendela">✕</button>${h}</div></div>`; }
@@ -2222,12 +2288,12 @@ function initBeranda() {
   document.addEventListener('click', e => { if ((S.pfMenu || S.dMenu) && !(e.target.closest && e.target.closest('.addwrap'))) tutupMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupMenu(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') tutupModal(); });
-  const h = location.hash.slice(1);
-  if (['home', 'courses', 'progress', 'settings', 'jadwal'].includes(h)) S.view = h;
-  const paksaTur = h === 'tour';
-  if (paksaTur) history.replaceState(null, '', location.pathname + location.search);
+  const h = location.hash.slice(1), paksaTur = h === 'tour', legacy = ['home', 'courses', 'progress', 'settings', 'jadwal'].includes(h);
+  applyRoute(legacy ? h : HIST ? location.pathname : (h.startsWith('/') ? h : ''));
+  if (paksaTur) history.replaceState(null, '', HIST ? location.pathname : location.pathname + location.search);
   setMe(U);
-  render();
+  ROUTE_REPLACE = true; render();
+  window.addEventListener('popstate', () => { applyRoute(HIST ? location.pathname : location.hash.slice(1)); tutupModal(); ROUTE_REPLACE = true; render(); window.scrollTo(0, 0); });
   // Panduan spotlight muncul otomatis sekali untuk pengguna yang belum pernah melihatnya
   if (paksaTur || !prefOf(U).tour) setTimeout(startTour, 500);
   // hitung mundur absen; saat habis, tampilan partisipan dimuat ulang (pengajar: hanya angka, agar form tidak terhapus)
@@ -2261,7 +2327,9 @@ function initLogin(){
 
 if (new URLSearchParams(location.search).has('dihapus')) toast('Akun kamu sudah dihapus permanen.');
 
-function showTab(reg) {
+const isRegUrl = () => HIST ? location.pathname.replace(/\/+$/, '') === '/register' : location.hash === '#register';
+function showTab(reg, push = true) {
+  if (push && isRegUrl() !== reg) history.pushState(null, '', reg ? (HIST ? '/register' : 'login.html#register') : (HIST ? '/login' : 'login.html'));   // Daftar -> /register, Masuk -> /login
   $('#fLogin').hidden = reg;
   $('#fReg').hidden = !reg;
   $('#tLogin').classList.toggle('on', !reg);
@@ -2270,6 +2338,8 @@ function showTab(reg) {
   $('#tReg').setAttribute('aria-selected', reg);
   document.querySelector('.auth').classList.toggle('reg', reg);
 }
+showTab(isRegUrl(), false);
+window.addEventListener('popstate', () => showTab(isRegUrl(), false));
 $('#tLogin').onclick = () => showTab(false);
 $('#tReg').onclick = () => showTab(true);
 $('#toReg').onclick = e => { e.preventDefault(); showTab(true); };
@@ -2292,7 +2362,7 @@ $('#fLogin').addEventListener('submit', async e => {
       : error.status === 400 ? 'Email atau kata sandi salah.' : 'Gagal masuk: ' + error.message;
     return;
   }
-  location.href = 'index.html';
+  location.href = appHref('/beranda');
 });
 
 // ---- Daftar ----
@@ -2321,7 +2391,7 @@ $('#fReg').addEventListener('submit', async e => {
   btn.disabled = false;
   if (error) return err(/registered|exists/i.test(error.message) ? 'Email ini sudah terdaftar. Silakan masuk.' : 'Gagal mendaftar: ' + error.message);
   if (data.user && data.user.identities && data.user.identities.length === 0) return err('Email ini sudah terdaftar. Silakan masuk.');
-  if (data.session) { location.href = 'profil.html?baru=1'; return; }   // lanjut ke profil
+  if (data.session) { location.href = pageHref('profil', '?baru=1'); return; }   // lanjut ke profil
   // Fitur "Confirm email" di Supabase aktif: akun bisa dipakai setelah tautan di email diklik.
   showTab(false); $('#lEmail').value = d.email;
   const el = $('#eLogin'); el.style.color = '#1a7f4b';
@@ -2366,7 +2436,7 @@ function pfScene(u, nMk) {
 
 function render() {
   const u = Auth.session();
-  if (!u) { location.replace('login.html'); return; }
+  if (!u) { location.replace(pageHref('login')); return; }
   const idLabel = 'ID';
   setMe(u);
 
@@ -2423,7 +2493,7 @@ function render() {
     return `<div class="mkitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${mkIc(m, d)}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
   }).join('')}</div>`
     : `<p class="quote" style="margin:12px 0 0">${isD ? 'Belum ada pelajaran. Buat pelajaran dan kelas di menu Pelajaran.' : 'Belum bergabung ke kelas mana pun. Masukkan kode kelas dari pengajar di menu Pelajaran.'}</p>`;
-  const mkCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="index.html#courses">Buka pelajaran →</a></div>${mkItems}</div>`;
+  const mkCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="${appHref('/pelajaran')}">Buka pelajaran →</a></div>${mkItems}</div>`;
 
   const hapusCard = `<div class="card danger pfull pf-card" style="--i:6"><div class="row" style="justify-content:space-between;align-items:center"><div style="min-width:0;flex:1 1 260px"><b>Hapus akun permanen</b><p class="quote" style="margin:4px 0 0">Menghapus akun akan menghapus seluruh data milikmu dan tidak bisa dibatalkan.</p></div><button class="btn red" id="bHapus">Hapus akun permanen</button></div></div>`;
 
@@ -2481,7 +2551,7 @@ function bind(u) {
     toast('Email verifikasi dikirim ke ' + u.email);
     setTimeout(() => { b.disabled = false; }, 60000);
   });
-  on('#bCek', async () => { try { await sb.auth.refreshSession(); } catch (e) {} location.href = 'profil.html'; });
+  on('#bCek', async () => { try { await sb.auth.refreshSession(); } catch (e) {} location.href = pageHref('profil'); });
   on('#bEditK', () => { editing = 'kontak'; pwOpen = false; render(); });
   on('#bBatalK', () => { editing = null; render(); });
   on('#bPw', () => { pwOpen = true; editing = null; render(); });
@@ -2555,7 +2625,7 @@ function hapusModal() {
     const { error } = await sb.rpc('delete_my_account');
     if (error) return say('Gagal menghapus akun: ' + error.message);
     try { await sb.auth.signOut({ scope: 'local' }); } catch (e) {}
-    location.href = 'login.html?dihapus=1';
+    location.href = pageHref('login', '?dihapus=1');
   };
   $('#hKonf').focus();
 }
@@ -2582,7 +2652,7 @@ function initMobileNav() {
   document.addEventListener('click', e => { if (aside.classList.contains('mopen') && !(e.target.closest && e.target.closest('aside'))) set(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
   if (!logo) return;
-  const home = () => { if (!phone()) return; set(false); if (PAGE === 'beranda') go('home'); else location.href = 'index.html'; };
+  const home = () => { if (!phone()) return; set(false); if (PAGE === 'beranda') go('home'); else location.href = appHref('/beranda'); };
   const sync = () => { if (phone()) { logo.setAttribute('role', 'link'); logo.setAttribute('tabindex', '0'); logo.setAttribute('aria-label', 'KelasBelajar, kembali ke Beranda'); } else { set(false); logo.removeAttribute('role'); logo.removeAttribute('tabindex'); logo.removeAttribute('aria-label'); } };
   sync(); window.addEventListener('resize', sync);
   logo.addEventListener('click', home);
@@ -2594,11 +2664,11 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
     if (/GANTI/.test(SUPABASE_URL) || /GANTI/.test(SUPABASE_ANON_KEY)) throw new Error('Konfigurasi Supabase belum diisi. Buka app.js lalu isi SUPABASE_URL dan SUPABASE_ANON_KEY.');
     if (PAGE === 'login') {
       const { data: { session } } = await sb.auth.getSession();
-      if (session) { location.replace('index.html'); return; }
+      if (session) { location.replace(appHref('/beranda')); return; }
       initLogin(); initScrollHint(); return;
     }
-    if (!(await loadAll())) { location.replace('login.html'); return; }
-    applyPref(); initMobileNav();
+    if (!(await loadAll())) { location.replace(pageHref('login')); return; }
+    applyPref(); initMobileNav(); fixLinks();
     if (PAGE === 'beranda') {
       U = Auth.session(); isDosen = U.role === 'Pengajar';
       initBeranda();
