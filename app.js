@@ -2453,7 +2453,7 @@ $('#fReg').addEventListener('submit', async e => {
 }
 
 function initProfil(){
-let editing = null, pwOpen = false, timer = null, first = true;
+let editing = null, pwOpen = false, timer = null, first = true, pend = '';
 
 if (!Auth.requireLogin()) return;
 $('#bOut').onclick = () => Auth.logout();
@@ -2500,6 +2500,12 @@ function render() {
       </div>`;
 
 
+  const pendCard = pend && pend !== u.email ? `<div class="card pfull pf-card">
+        <div class="row" style="justify-content:space-between"><b>Konfirmasi ganti Gmail</b><span class="chip c-no">Menunggu kode</span></div>
+        <p class="quote">Kamu meminta mengganti Gmail ke <b>${esc(pend)}</b>. Penggantian selesai setelah kamu memasukkan kode dari <b>dua email</b>: Gmail lama (<b>${esc(u.email)}</b>) dan Gmail baru. Sampai saat itu, kamu tetap masuk dengan Gmail lama.</p>
+        <div class="row"><button class="btn lime" id="bKodeGanti">Masukkan kode</button></div>
+      </div>` : '';
+
   const dataCard = `<div class="card pf-card" style="--i:1"><div class="pf-h"><span class="pf-hi">${sxi('id')}</span><b>Data diri</b></div>
         <dl class="kv">
           <dt>Nama lengkap</dt><dd>${esc(u.nama)}</dd>
@@ -2513,7 +2519,7 @@ function render() {
     ? `<form id="fKontak" class="card pf-card" style="--i:2" novalidate><div class="pf-h"><span class="pf-hi">${sxi('mail')}</span><b>Ubah kontak</b></div>
         <label class="f">No. HP<input id="eHp" value="${esc(u.hp)}" inputmode="tel" maxlength="16"></label>
         <label class="f">Gmail<input type="email" id="eEmail" value="${esc(u.email)}" autocomplete="email"></label>
-        <p class="lock" style="margin:0">Jika Gmail diganti, kamu akan masuk dengan Gmail baru dan perlu memverifikasinya ulang.</p>
+        <p class="lock" style="margin:0">Jika Gmail diganti, kami mengirim kode ke Gmail lama dan Gmail baru. Gmail baru berlaku setelah kedua kodenya kamu masukkan.</p>
         <p class="err" id="eKontak" role="alert"></p>
         <div class="row"><button class="btn lime" type="submit">Simpan</button><button class="btn ghost" type="button" id="bBatalK">Batal</button></div></form>`
     : `<div class="card pf-card" style="--i:2"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('mail')}</span><b>Kontak saya</b></div><button class="btn ghost" id="bEditK">Ubah</button></div>
@@ -2533,7 +2539,7 @@ function render() {
       <label class="f">Ulangi kata sandi baru<input type="password" id="pwNew2" autocomplete="new-password"></label>
       <p class="err" id="ePw" role="alert"></p>
       <div class="row"><button class="btn lime" type="submit">Simpan kata sandi</button><button class="btn ghost" type="button" id="bPwBatal">Batal</button></div></form>`
-      : '<button class="btn ghost" id="bPw" style="margin-top:14px">Ubah kata sandi</button>'}</div>`;
+      : '<button class="btn ghost" id="bPw" style="margin-top:14px">Ubah kata sandi</button><p class="lock" style="margin-top:10px">🔐 Mengubah kata sandi perlu kode verifikasi yang dikirim ke Gmail kamu.</p>'}</div>`;
 
   const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map((m, mi) => {
     const d = dec(m);
@@ -2552,6 +2558,7 @@ function render() {
     ${scene}
     ${baru ? '<div class="card note">🎉 Akun berhasil dibuat. Satu langkah lagi: verifikasi Gmail kamu di bawah ini.</div>' : ''}
     ${verif}
+    ${pendCard}
     <div class="pcols">${dataCard}${kontakCard}${aktivitas}${aman}</div>
     ${mkCard}${hapusCard}`;
 
@@ -2573,8 +2580,93 @@ function pfCount() {
   });
 }
 
+const KODE_STYLE = 'text-align:center;font-size:22px;font-weight:700;letter-spacing:6px';
+// Tombol dengan hitung mundur (untuk "Kirim ulang kode")
+function cdBtn(btn, label, sec) {
+  clearInterval(btn._t); let s = sec;
+  const paint = () => { btn.disabled = s > 0; btn.textContent = s > 0 ? `${label} (${s})` : label; };
+  paint();
+  if (s <= 0) return;
+  btn._t = setInterval(() => { s--; if (!btn.isConnected) { clearInterval(btn._t); return; } paint(); if (s <= 0) clearInterval(btn._t); }, 1000);
+}
+const limitMsg = m => /rate|second|too many|limit/i.test(m || '');
+
+// Ganti Gmail: wajib dua kode, satu dari Gmail lama dan satu dari Gmail baru.
+function emailKodeModal(baru, lama, note) {
+  let oldDone = false, newDone = false;
+  modal(`<h3>Konfirmasi ganti Gmail</h3>
+    <p class="quote">Demi keamanan, penggantian Gmail harus dikonfirmasi dari <b>dua email</b>. Kami mengirim satu kode ke Gmail lama dan satu kode ke Gmail baru. Buka keduanya, lalu masukkan kodenya di sini.</p>
+    <label class="f"><span>1 · Kode dari Gmail lama · <b>${esc(lama)}</b></span><input id="ecOld" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="123456" style="${KODE_STYLE}"></label>
+    <label class="f"><span>2 · Kode dari Gmail baru · <b>${esc(baru)}</b></span><input id="ecNew" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="123456" style="${KODE_STYLE}"></label>
+    <p class="err" id="ecErr" role="alert"></p>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" id="ecKirim" type="button">Kirim ulang kode</button><button class="btn lime" id="ecOk" type="button">Konfirmasi</button></div>
+    <p class="lock" style="margin-top:12px">Belum masuk? Cek folder Spam. Jendela ini boleh ditutup, kamu bisa membukanya lagi lewat kartu “Konfirmasi ganti Gmail” di halaman profil.</p>`);
+  const say = (m, ok) => { const e = $('#ecErr'); if (!e) return; e.style.color = ok ? '#1a7f4b' : ''; e.textContent = m; };
+  const tandai = id => { const i = $(id); i.value = '✓ Terkonfirmasi'; i.disabled = true; i.style.color = '#1a7f4b'; i.style.letterSpacing = '0'; i.style.fontSize = '16px'; };
+  if (note) say(note, true);
+  $('#ecOld').focus();
+  cdBtn($('#ecKirim'), 'Kirim ulang kode', note ? 60 : 0);
+  $('#ecKirim').onclick = async () => {
+    const b = $('#ecKirim'); b.disabled = true; say('');
+    const { error } = await sb.auth.resend({ type: 'email_change', email: baru });
+    if (error) { say(limitMsg(error.message) ? 'Terlalu sering meminta kode. Tunggu sebentar lalu coba lagi.' : 'Gagal mengirim kode: ' + error.message); cdBtn(b, 'Kirim ulang kode', 5); return; }
+    say('✅ Kode baru dikirim ke Gmail lama dan Gmail baru.', true); cdBtn(b, 'Kirim ulang kode', 60);
+  };
+  $('#ecOk').onclick = async () => {
+    const kOld = oldDone ? '' : $('#ecOld').value.replace(/\s+/g, ''), kNew = newDone ? '' : $('#ecNew').value.replace(/\s+/g, '');
+    if (!oldDone && !/^\d{6,10}$/.test(kOld)) return say('Masukkan kode angka dari Gmail lama (' + lama + ').');
+    if (!newDone && !/^\d{6,10}$/.test(kNew)) return say('Masukkan kode angka dari Gmail baru (' + baru + ').');
+    const b = $('#ecOk'); b.disabled = true; say('');
+    const cek = (em, kode) => sb.auth.verifyOtp({ email: em, token: kode, type: 'email_change' });
+    const salah = (r, nm) => /expired|invalid/i.test(r.error.message) ? `Kode dari ${nm} salah atau sudah kedaluwarsa. Periksa lagi, atau kirim ulang kode.` : 'Gagal konfirmasi: ' + r.error.message;
+    if (!oldDone) { const r = await cek(lama, kOld); if (r.error) { b.disabled = false; return say(salah(r, 'Gmail lama')); } oldDone = true; tandai('#ecOld'); }
+    if (!newDone) { const r = await cek(baru, kNew); if (r.error) { b.disabled = false; return say(salah(r, 'Gmail baru') + (oldDone ? ' (Kode Gmail lama sudah diterima.)' : '')); } newDone = true; tandai('#ecNew'); }
+    let usr = null; try { usr = (await sb.auth.getUser()).data.user; } catch (e) {}
+    if (usr && usr.email !== baru) { b.disabled = false; return say('Belum selesai. Pastikan kode dari kedua Gmail sudah dimasukkan.'); }
+    pend = ''; tutupModal(); toast('✅ Gmail berhasil diganti ke ' + baru);
+    try { await sb.auth.refreshSession(); } catch (e) {}
+    setTimeout(() => { location.href = pageHref('profil'); }, 800);
+  };
+}
+
+// Ganti kata sandi: wajib kode yang dikirim ke Gmail akun.
+function pwKodeModal(email, baru, note) {
+  let lolos = false;
+  modal(`<h3>Konfirmasi ubah kata sandi</h3>
+    <p class="quote">Demi keamanan, kami mengirim kode verifikasi ke <b>${esc(email)}</b>. Buka Gmail kamu, lalu masukkan kodenya di sini untuk menyelesaikan perubahan kata sandi.</p>
+    <label class="f">Kode dari email<input id="pkKode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" style="${KODE_STYLE}"></label>
+    <p class="err" id="pkErr" role="alert"></p>
+    <div class="row" style="margin-top:12px"><button class="btn ghost" id="pkKirim" type="button">Kirim ulang kode</button><button class="btn lime" id="pkOk" type="button">Ubah kata sandi</button></div>
+    <p class="lock" style="margin-top:12px">Belum masuk? Cek folder Spam. Kata sandi baru baru berlaku setelah kodenya benar.</p>`);
+  const say = (m, ok) => { const e = $('#pkErr'); if (!e) return; e.style.color = ok ? '#1a7f4b' : ''; e.textContent = m; };
+  if (note) say(note, true);
+  $('#pkKode').focus();
+  $('#pkKode').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#pkOk').click(); } };
+  cdBtn($('#pkKirim'), 'Kirim ulang kode', 60);
+  $('#pkKirim').onclick = async () => {
+    const b = $('#pkKirim'); b.disabled = true; say('');
+    const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    if (error) { say(limitMsg(error.message) ? 'Terlalu sering meminta kode. Tunggu sebentar lalu coba lagi.' : 'Gagal mengirim kode: ' + error.message); cdBtn(b, 'Kirim ulang kode', 5); return; }
+    say('✅ Kode baru dikirim ke ' + email + '.', true); cdBtn(b, 'Kirim ulang kode', 60);
+  };
+  $('#pkOk').onclick = async () => {
+    const kode = $('#pkKode').value.replace(/\s+/g, '');
+    if (!lolos && !/^\d{6,10}$/.test(kode)) return say('Masukkan kode angka dari email.');
+    const b = $('#pkOk'); b.disabled = true; say('');
+    if (!lolos) {
+      const r = await sb.auth.verifyOtp({ email, token: kode, type: 'email' });
+      if (r.error) { b.disabled = false; return say(/expired|invalid/i.test(r.error.message) ? 'Kode salah atau sudah kedaluwarsa. Periksa lagi, atau kirim ulang kode.' : 'Gagal verifikasi: ' + r.error.message); }
+      lolos = true; $('#pkKode').disabled = true;
+    }
+    const { error } = await sb.auth.updateUser({ password: baru });
+    if (error) { b.disabled = false; return say('Kode benar, tetapi gagal mengubah kata sandi: ' + error.message); }
+    tutupModal(); pwOpen = false; render(); toast('✅ Kata sandi diperbarui');
+  };
+}
+
 function bind(u) {
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+  on('#bKodeGanti', () => emailKodeModal(pend, u.email));
   const pickFoto = () => { const f = $('#fFoto'); if (f) f.click(); };
   on('#bFoto', pickFoto); on('#bFotoUbah', pickFoto); on('#liFoto', pickFoto);
   const lf = $('#liFoto'); if (lf) lf.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFoto(); } };
@@ -2610,13 +2702,20 @@ function bind(u) {
     const hp = $('#eHp').value.trim(), em = $('#eEmail').value.trim().toLowerCase(), ganti = em !== u.email;
     if (!/^0\d{8,13}$/.test(hp)) return err('Nomor HP tidak valid. Contoh: 081234567890.');
     if (!isGmail(em)) return err('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
+    const btn = fk.querySelector('button[type=submit]'); btn.disabled = true; err('');
     if (ganti) {
       const { error } = await sb.auth.updateUser({ email: em }, { emailRedirectTo: location.origin + '/profil.html' });
-      if (error) return err(/already|registered|exists/i.test(error.message) ? 'Gmail ini sudah dipakai akun lain.' : 'Gagal mengganti Gmail: ' + error.message);
+      btn.disabled = false;
+      if (error) return err(/already|registered|exists/i.test(error.message) ? 'Gmail ini sudah dipakai akun lain.' : limitMsg(error.message) ? 'Terlalu sering meminta kode. Tunggu sebentar lalu coba lagi.' : 'Gagal mengganti Gmail: ' + error.message);
+      Auth.update(u.email, { hp });
+      pend = em; editing = null; render();
+      emailKodeModal(em, u.email, '✅ Kode konfirmasi sudah dikirim ke ' + u.email + ' dan ' + em + '.');
+      return;
     }
+    btn.disabled = false;
     Auth.update(u.email, { hp });
     editing = null; render();
-    toast(ganti ? 'Email konfirmasi dikirim ke Gmail baru. Gmail berganti setelah kamu klik tautannya.' : 'Kontak diperbarui');
+    toast('Kontak diperbarui');
   };
   const fp = $('#fPw');
   if (fp) fp.onsubmit = async e => {
@@ -2628,9 +2727,11 @@ function bind(u) {
     if (baru.length < 8) return say('Kata sandi baru minimal 8 karakter.');
     if (baru === lama) return say('Kata sandi baru harus berbeda dari yang lama.');
     if (baru !== ulang) return say('Konfirmasi kata sandi baru tidak sama.');
-    const { error } = await sb.auth.updateUser({ password: baru });
-    if (error) return say('Gagal mengubah kata sandi: ' + error.message);
-    pwOpen = false; render(); toast('Kata sandi diperbarui');
+    const btn = fp.querySelector('button[type=submit]'); btn.disabled = true; say('');
+    const o = await sb.auth.signInWithOtp({ email: u.email, options: { shouldCreateUser: false } });
+    btn.disabled = false;
+    if (o.error) return say(limitMsg(o.error.message) ? 'Terlalu sering meminta kode. Tunggu sebentar lalu coba lagi.' : 'Gagal mengirim kode: ' + o.error.message);
+    pwKodeModal(u.email, baru, '✅ Kode verifikasi sudah dikirim ke ' + u.email + '.');
   };
 }
 
@@ -2676,6 +2777,10 @@ function hapusModal() {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#layer').innerHTML = ''; });
 render();
+sb.auth.getUser().then(({ data }) => {
+  const p = (data && data.user && data.user.new_email) || '';
+  if (p !== pend && !editing && !pwOpen && !$('#layer').innerHTML) { pend = p; render(); }
+}).catch(() => {});
 
 }
 
