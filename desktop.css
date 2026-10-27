@@ -1296,3 +1296,7 @@ html.sb-min .logo{padding-bottom:14px}
 @supports not (container-type: inline-size) {
   @media (max-width: 1180px) { .sx-2 { grid-template-columns: 1fr; } }
 }
+
+#vKode{letter-spacing:.4em;font-size:22px;font-weight:800;text-align:center}
+#vKode::placeholder{letter-spacing:.4em;font-weight:600}
+#vKirim{font-weight:700}

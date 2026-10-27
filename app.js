@@ -2339,11 +2339,15 @@ function initLogin(){
 
 if (new URLSearchParams(location.search).has('dihapus')) toast('Akun kamu sudah dihapus permanen.');
 
+let verEmail = '', verTimer = null, verCd = 0;
 const isRegUrl = () => HIST ? location.pathname.replace(/\/+$/, '') === '/register' : location.hash === '#register';
 function showTab(reg, push = true) {
   if (push && isRegUrl() !== reg) history.pushState(null, '', reg ? (HIST ? '/register' : 'login.html#register') : (HIST ? '/login' : 'login.html'));
   $('#fLogin').hidden = reg;
   $('#fReg').hidden = !reg;
+  $('#fVer').hidden = true;
+  document.querySelector('.tabs').hidden = false;
+  if (verTimer) { clearInterval(verTimer); verTimer = null; }
   $('#tLogin').classList.toggle('on', !reg);
   $('#tReg').classList.toggle('on', reg);
   $('#tLogin').setAttribute('aria-selected', !reg);
@@ -2359,6 +2363,46 @@ $('#toLogin').onclick = e => { e.preventDefault(); showTab(false); };
 
 function role() { return document.querySelector('input[name=role]:checked').value; }
 
+function verCooldown(sec) {
+  if (verTimer) clearInterval(verTimer);
+  verCd = sec;
+  const a = $('#vKirim'), paint = () => { a.textContent = verCd > 0 ? 'Kirim ulang kode (' + verCd + ' dtk)' : 'Kirim ulang kode'; a.style.opacity = verCd > 0 ? '.55' : ''; };
+  paint();
+  if (sec <= 0) return;
+  verTimer = setInterval(() => { verCd--; paint(); if (verCd <= 0) { clearInterval(verTimer); verTimer = null; } }, 1000);
+}
+function showVer(email, cd, note) {
+  verEmail = email;
+  $('#fLogin').hidden = true; $('#fReg').hidden = true; $('#fVer').hidden = false;
+  document.querySelector('.tabs').hidden = true;
+  $('#vInfo').innerHTML = 'Kami mengirim kode verifikasi ke <b>' + esc(email) + '</b>. Buka Gmail kamu, lalu masukkan kodenya di sini.';
+  const el = $('#eVer'); el.style.color = note ? '#1a7f4b' : ''; el.textContent = note || '';
+  $('#vKode').value = ''; $('#vKode').focus();
+  verCooldown(cd);
+}
+$('#vKirim').onclick = async e => {
+  e.preventDefault();
+  if (verCd > 0 || !verEmail) return;
+  const el = $('#eVer'); el.style.color = ''; el.textContent = '';
+  const { error } = await sb.auth.resend({ type: 'signup', email: verEmail });
+  if (error) { el.textContent = /rate|second|too many|limit/i.test(error.message) ? 'Terlalu sering meminta kode. Tunggu sebentar lalu coba lagi.' : 'Gagal mengirim kode: ' + error.message; return; }
+  el.style.color = '#1a7f4b'; el.textContent = '✅ Kode baru dikirim ke ' + verEmail + '.';
+  verCooldown(60);
+};
+$('#vBatal').onclick = e => { e.preventDefault(); showTab(false); };
+$('#fVer').addEventListener('submit', async e => {
+  e.preventDefault();
+  const el = $('#eVer'), btn = e.target.querySelector('button[type=submit]'), kode = $('#vKode').value.replace(/\s+/g, '');
+  el.style.color = ''; el.textContent = '';
+  if (!/^\d{6,8}$/.test(kode)) { el.textContent = 'Masukkan kode angka dari email (6–8 digit).'; return; }
+  btn.disabled = true;
+  let r = await sb.auth.verifyOtp({ email: verEmail, token: kode, type: 'signup' });
+  if (r.error) { const r2 = await sb.auth.verifyOtp({ email: verEmail, token: kode, type: 'email' }); if (!r2.error) r = r2; }
+  btn.disabled = false;
+  if (r.error) { el.textContent = /expired|invalid/i.test(r.error.message) ? 'Kode salah atau sudah kedaluwarsa. Periksa lagi, atau kirim ulang kode.' : 'Gagal verifikasi: ' + r.error.message; return; }
+  location.href = pageHref('profil', '?baru=1');
+});
+
 $('#fLogin').addEventListener('submit', async e => {
   e.preventDefault();
   const el = $('#eLogin'), btn = e.target.querySelector('button[type=submit]');
@@ -2369,8 +2413,8 @@ $('#fLogin').addEventListener('submit', async e => {
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   btn.disabled = false;
   if (error) {
-    el.textContent = /not confirmed/i.test(error.message) ? 'Gmail belum diverifikasi. Buka email dari KelasBelajar dan klik tautan konfirmasinya.'
-      : error.status === 400 ? 'Email atau kata sandi salah.' : 'Gagal masuk: ' + error.message;
+    if (/not confirmed/i.test(error.message)) { showVer(email, 0, 'Gmail kamu belum diverifikasi. Masukkan kode dari email, atau kirim ulang kode.'); return; }
+    el.textContent = error.status === 400 ? 'Email atau kata sandi salah.' : 'Gagal masuk: ' + error.message;
     return;
   }
   location.href = appHref('/beranda');
@@ -2402,9 +2446,8 @@ $('#fReg').addEventListener('submit', async e => {
   if (error) return err(/registered|exists/i.test(error.message) ? 'Email ini sudah terdaftar. Silakan masuk.' : 'Gagal mendaftar: ' + error.message);
   if (data.user && data.user.identities && data.user.identities.length === 0) return err('Email ini sudah terdaftar. Silakan masuk.');
   if (data.session) { location.href = pageHref('profil', '?baru=1'); return; }
-  showTab(false); $('#lEmail').value = d.email;
-  const el = $('#eLogin'); el.style.color = '#1a7f4b';
-  el.textContent = '✅ Akun dibuat. Kami mengirim email konfirmasi ke ' + d.email + '. Klik tautan di email itu, lalu masuk di sini.';
+  $('#lEmail').value = d.email;
+  showVer(d.email, 60, '✅ Akun dibuat. Kode verifikasi sudah dikirim.');
 });
 
 }

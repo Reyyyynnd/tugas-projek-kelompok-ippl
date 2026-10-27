@@ -1401,3 +1401,7 @@ html.dsk-open{overflow:hidden}
 .dsk-how span{display:inline-block;margin-right:6px;padding:1px 9px;border-radius:99px;background:var(--g8);color:var(--lime);font-size:11.5px;font-weight:800}
 .dsk-ok{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--lime);color:var(--g9);font:inherit;font-size:15px;font-weight:800;cursor:pointer}
 .dsk-ok:focus-visible{outline:3px solid var(--g7);outline-offset:2px}
+
+#vKode{letter-spacing:.4em;font-size:22px;font-weight:800;text-align:center}
+#vKode::placeholder{letter-spacing:.4em;font-weight:600}
+#vKirim{font-weight:700}
