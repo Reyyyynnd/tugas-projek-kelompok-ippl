@@ -464,14 +464,14 @@ async function unduhRef(kind, mkId, n, j, kid) {
 }
 
 function stats(m, em) {
-  const p = P(m.id, em), pt = pertOf(m, em); let tasks = 0, done = 0, todoT = 0, todoQ = 0;
+  const p = P(m.id, em), pt = pertOf(m, em); let tasks = 0, done = 0, todoT = 0, todoQ = 0, missed = 0;
   pt.forEach(x => {
-    if (x.tugas) { tasks++; if (p.sub[x.n]) done++; else todoT++; }
-    if (adaQuiz(x)) { tasks++; if (quizDone(p, x)) done++; else todoQ++; }
+    if (x.tugas) { tasks++; if (p.sub[x.n]) done++; else if (over(x.tugasDl) && !p.kembali[x.n]) missed++; else todoT++; }
+    if (adaQuiz(x)) { tasks++; if (quizDone(p, x)) done++; else if (over(x.quizDl)) missed++; else todoQ++; }
   });
   const hadir = Object.values(p.att).filter(v => v === 'H').length;
   const lewat = pt.filter(x => p.att[x.n] !== 'H' && x.absen && x.absen.dur > 0 && Date.now() >= x.absen.start + x.absen.dur * 60000).length;   // absen sudah ditutup dan tidak dihadiri
-  return { hadir, held: pt.length, lewat, tasks, done, todo: tasks - done, todoT, todoQ };
+  return { hadir, held: pt.length, lewat, tasks, done, todo: tasks - done - missed, missed, todoT, todoQ };
 }
 
 // ---------- helper tampilan ----------
@@ -880,10 +880,13 @@ function home() {
     return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#eefad0', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#eefad0', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#eefad0', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
   }
   if (!L.length) return head() + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
-  const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
+  const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'missed', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, missed: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
   const pf = prefOf(U), abs = pf.ab === false ? [] : L.flatMap(m => pertOf(m, U.email).filter(x => absenOpen(x) && !P(m.id, U.email).att[x.n]).map(x => ({ m, x })));
   const todo = [];
   L.forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => { if (x.tugas && !p.sub[x.n]) todo.push([m, x, p.kembali[x.n] ? 'Dikembalikan' : 'Tugas', p.kembali[x.n] ? null : x.tugasDl]); else if (x.tugas && legacyFile(p.sub[x.n])) todo.push([m, x, 'Kirim ulang', null]); if (adaQuiz(x) && !quizDone(p, x)) todo.push([m, x, 'Quiz', x.quizDl]); }); });
+  // Tugas/quiz yang batas waktunya sudah lewat dan belum dikirim dipindah ke "Tugas terlewat" (tidak dihitung sebagai "harus diselesaikan")
+  const todoLewat = todo.filter(r => r[3] && over(r[3])).sort((a, b) => b[3] - a[3]), todoAktif = todo.filter(r => !(r[3] && over(r[3])));
+  const todoRow = ([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`;
   const pct = t.held ? Math.round(t.hadir / t.held * 100) : 0;
   const hero = head();
   const subTodo = !t.todo ? 'Semua sudah beres 🎉' : t.todoT && t.todoQ ? `${t.todoT} tugas · ${t.todoQ} quiz belum selesai` : t.todoT ? 'Belum dikirim' : 'Belum dikerjakan';
@@ -891,8 +894,9 @@ function home() {
   return hero + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
     + jdCard(L, pf)
     + soonHtml(todo, pf)
-    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#eefad0', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', t.done, '✅', '#eefad0', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
-    + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
+    + `<h2>Progres keseluruhan</h2><div class="grid3 g-prog">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#eefad0', t.todo ? 'var(--red)' : '', '', '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', `<span class="cnt" data-to="${t.done}">${t.done}</span><i class="pfr">/${t.tasks}</i>`, '✅', '#eefad0', '', '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', `<span class="cnt" data-to="${t.hadir}">${t.hadir}</span><i class="pfr">/${t.held}</i>`, miniRing(pct), 'transparent', '', '', 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
+    + (todoAktif.length ? `<h2>Perlu dikerjakan</h2>${todoAktif.slice(0, 6).map(todoRow).join('')}` : '')
+    + (todoLewat.length ? `<h2>Tugas terlewat</h2>${todoLewat.slice(0, 6).map(todoRow).join('')}${todoLewat.length > 6 ? `<div class="quote" style="margin:6px 2px 0">+${todoLewat.length - 6} lainnya yang terlewat</div>` : ''}` : '')
     + `<h2>Pelajaran</h2>${courseCards(L)}`;
 }
 // Detail kartu "Progres keseluruhan": daftar tugas/quiz/pertemuan per pelajaran, tiap baris bisa dibuka langsung
@@ -900,8 +904,8 @@ function statRows(kind) {
   const rows = [];
   myMk().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
     if (kind === 'todo') {
-      if (x.tugas && !p.sub[x.n]) rows.push({ m, x, chip: p.kembali[x.n] ? ['Dikembalikan', 'c-no'] : ['Tugas', 'c-iz'], dl: p.kembali[x.n] ? null : x.tugasDl });
-      if (adaQuiz(x) && !quizDone(p, x)) rows.push({ m, x, chip: ['Quiz', 'c-bl'], dl: x.quizDl });
+      if (x.tugas && !p.sub[x.n] && (p.kembali[x.n] || !over(x.tugasDl))) rows.push({ m, x, chip: p.kembali[x.n] ? ['Dikembalikan', 'c-no'] : ['Tugas', 'c-iz'], dl: p.kembali[x.n] ? null : x.tugasDl });
+      if (adaQuiz(x) && !quizDone(p, x) && !over(x.quizDl)) rows.push({ m, x, chip: ['Quiz', 'c-bl'], dl: x.quizDl });
     } else if (kind === 'done') {
       const nl = p.nilai[x.n];
       if (x.tugas && p.sub[x.n]) rows.push({ m, x, chip: ['Tugas', 'c-ok'], note: nl ? (nl.skor != null ? 'Nilai ' + nl.skor : 'Sudah dinilai') : 'Menunggu penilaian' });

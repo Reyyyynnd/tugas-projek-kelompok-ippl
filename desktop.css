@@ -1330,3 +1330,15 @@ html.sb-min .logo{padding-bottom:14px}
 .kc i,.kc i .eic{color:#0c2a1f}
 .eic-warn{stroke-width:2.1}
 .kc i .eic{width:19px;height:19px}
+
+/* Kartu "Progres keseluruhan": ukuran sedang, "Lihat detail" di kanan bawah agar tidak menabrak cincin */
+.g-prog{gap:12px}
+.g-prog .stat{padding:14px 16px 20px;gap:10px}
+.g-prog .stat .l{font-size:12.5px}
+.g-prog .stat .v{font-size:26px;line-height:1.2}
+.g-prog .stat .v .pfr{font-style:normal;font-size:15px;font-weight:700;color:var(--mu);margin-left:1px}
+.g-prog .stat .ic{width:42px;height:42px;font-size:19px}
+.g-prog .stat .ic.mr{width:52px;height:52px}
+.g-prog .stat .ic.mr b{font-size:11.5px}
+.g-prog .mring circle{stroke-width:6.5}
+.g-prog .stat .more{top:auto;right:14px;bottom:6px;font-size:11px}
