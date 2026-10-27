@@ -2126,8 +2126,20 @@ function sxSample(pf) {
   return c.join('') || '<span class="sx-chip off">Semua pengingat dimatikan</span>';
 }
 // penanda menu samping bergeser ke tab yang aktif
+// Penanda hijau menu Pengaturan diukur ulang setiap tata letak berubah (menu samping dibuka/tutup, layar diputar/diubah ukurannya, font selesai dimuat).
+// Tanpa ini penanda memakai ukuran lama sehingga bergeser dari tombol yang sedang aktif.
+let sxRO = null, sxNavLast = null;
+function sxWatch(nav) {
+  if (nav === sxNavLast) return; sxNavLast = nav;
+  if (sxRO) sxRO.disconnect();
+  if (typeof ResizeObserver === 'undefined') return;
+  sxRO = new ResizeObserver(() => sxInd());
+  sxRO.observe(nav); nav.querySelectorAll('.sx-tab').forEach(t => sxRO.observe(t));
+}
+window.addEventListener('resize', () => sxInd());
 function sxInd() {
   const nav = document.getElementById('sxNav'); if (!nav) return;
+  sxWatch(nav);
   const b = nav.querySelector('button.on'), ind = nav.querySelector('.sx-ind'); if (!b || !ind) return;
   ind.style.setProperty('--x', b.offsetLeft + 'px'); ind.style.setProperty('--y', b.offsetTop + 'px');
   ind.style.setProperty('--w', b.offsetWidth + 'px'); ind.style.setProperty('--h', b.offsetHeight + 'px');

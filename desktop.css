@@ -1125,7 +1125,7 @@ html.sb-min aside{width:76px;padding-left:12px;padding-right:12px}
   html.sb-min .logo{justify-content:center;padding-left:0;padding-right:0}
   html.sb-min .logo>div{display:none}
   html.sb-min .nl{display:none}
-  html.sb-min nav a,html.sb-min nav button{justify-content:center;padding-left:0;padding-right:0}
+  html.sb-min aside nav a,html.sb-min aside nav button{justify-content:center;padding-left:0;padding-right:0}
   html.sb-min .out .keluar{padding-left:0;padding-right:0}
 
 /* ===== Foto profil ===== */
@@ -1205,7 +1205,7 @@ nav a.on .ni:not(svg),nav button.on .ni:not(svg){background:#ffffff66}
 .out .keluar svg.ni{width:16px;height:16px}
 .out .keluar:hover{background:#e5484d26;color:#ffb3b6;border-color:#e5484d55;transform:none;box-shadow:none}
 html.sb-min .logo{padding-bottom:14px}
-  html.sb-min nav a,html.sb-min nav button{padding:6px 0}
+  html.sb-min aside nav a,html.sb-min aside nav button{padding:6px 0}
   html.sb-min .out .keluar{padding:8px 0}
 /* ===== Jadwal pelajaran: kartu pengingat (Beranda) + halaman jadwal lengkap ===== */
 .card.jd{--jc:#2f6fed;position:relative;overflow:hidden;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:16px;padding:16px 20px;background:linear-gradient(110deg,#f3fbd9,#e8f6ec 60%,#e8f1ff);border-color:#d3e5c0;animation:jdRise .5s cubic-bezier(.2,.8,.2,1) backwards}
