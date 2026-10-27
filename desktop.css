@@ -1356,3 +1356,30 @@ html.sb-min .logo{padding-bottom:14px}
 .sb-tg svg{width:15px;height:15px;transition:none;margin-left:-2px}
 .sb-tg::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);padding:6px 11px;border-radius:9px;background:var(--g9);color:var(--lime);font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 8px 20px #0c2a1f44;opacity:0;pointer-events:none}
 .sb-tg:hover::after,.sb-tg:focus-visible::after{opacity:1}
+
+/* =====================================================================
+   PERBAIKAN: halaman Pengaturan saat HP memakai mode "Situs desktop"
+   (lebar layar ±980px -> memakai desktop.css, tetapi ruang isi hanya ±700px
+   setelah sidebar, sehingga menu + dua kolom panel jadi terlalu sempit).
+   ===================================================================== */
+
+/* 1) Menu Pengaturan ditumpuk di atas panel (baris tab yang bisa digeser) sampai lebar 1180px */
+@media (max-width: 1180px) {
+  .sx-body { grid-template-columns: 1fr; }
+  .sx-nav { position: relative; top: 0; flex-direction: row; overflow-x: auto; padding: 6px; }
+  .sx-tab { flex: none; }
+  .sx-tt small { display: none; }
+}
+
+/* 2) Dua kolom di dalam panel beralih ke satu kolom berdasarkan lebar PANEL itu sendiri */
+.sx-panels { container-type: inline-size; container-name: sxp; }
+@container sxp (max-width: 760px) {
+  .sx-2 { grid-template-columns: 1fr; }
+  .sx-seg button { padding: 10px 4px; }
+  .sx-kl { flex-basis: 72px; }
+}
+
+/* Cadangan untuk browser lama yang belum mengenal container query */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1180px) { .sx-2 { grid-template-columns: 1fr; } }
+}
