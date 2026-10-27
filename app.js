@@ -1,3 +1,109 @@
+/* ===== Ikon satu warna =====
+   Emoji berwarna otomatis diganti ikon garis yang mengikuti warna tema (hijau) di seluruh website.
+   Mau ganti ikon? Ubah MAP (emoji -> nama ikon) atau P (bentuk ikon). Warna diatur lewat CSS (.eic). */
+(function () {
+  try {
+    const P = {
+      check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16 9.5"/>',
+      spark: '<path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+      note: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+      file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+      warn: '<path d="M12 3.5L2.8 19.5h18.4z"/><path d="M12 10v4.5"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/>',
+      cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+      link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
+      book: '<path d="M4.5 19V5a2 2 0 0 1 2-2h12v15h-12a2 2 0 0 0-2 2z" transform="translate(0 0)"/><path d="M4.5 19a2 2 0 0 0 2 2h12v-3"/>',
+      bookopen: '<path d="M12 6.5C10 5 7.5 4.5 3.5 4.5v13c4 0 6.5.5 8.5 2 2-1.5 4.5-2 8.5-2v-13c-4 0-6.5.5-8.5 2z"/><path d="M12 6.5v13"/>',
+      pencil: '<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/>',
+      bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21a2 2 0 0 0 4 0"/>',
+      hourglass: '<path d="M6.5 3h11M6.5 21h11"/><path d="M8 3c0 4.5 4 5.5 4 9s-4 4.5-4 9M16 3c0 4.5-4 5.5-4 9s4 4.5 4 9"/>',
+      clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4.2l2.8 1.6M5 4L3 6M19 4l2 2"/>',
+      key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/>',
+      pack: '<path d="M9 6V5a3 3 0 0 1 6 0v1"/><rect x="5" y="6" width="14" height="15" rx="4"/><path d="M9 14h6"/>',
+      sprout: '<path d="M12 21v-9"/><path d="M12 12c0-4 3-6.5 8-6.5 0 4.5-3 6.5-8 6.5z"/><path d="M12 14.5c0-3-2.2-5-6-5 0 3.5 2.2 5 6 5z"/>',
+      lock: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+      trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+      clip: '<path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4L15 7.5"/>',
+      tag: '<path d="M3.5 3.5h8l9 9-8 8-9-9z"/><circle cx="7.8" cy="7.8" r="1.2"/>',
+      search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+      trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+      flame: '<path d="M12 21c4 0 6-2.7 6-6 0-3-2-4.5-3-7-1 1-1.5 2-1.5 3C12 9 12 5 10 3c0 4-4 5.5-4 11 0 4 2.5 7 6 7z"/>',
+      target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+      mail: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+      chat: '<path d="M5 4.5h14A1.5 1.5 0 0 1 20.5 6v9a1.5 1.5 0 0 1-1.5 1.5h-8l-5 4v-4H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/>',
+      globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+      db: '<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/>',
+      laptop: '<rect x="4.5" y="5" width="15" height="10.5" rx="1.5"/><path d="M2.5 19h19"/>',
+      chart: '<path d="M5 20v-9M12 20V4M19 20v-6"/>',
+      calc: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7.5h7M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01"/>',
+      sunrise: '<path d="M3 19h18M7 19a5 5 0 0 1 10 0M12 5v4M5.5 10l1.8 1.8M18.5 10l-1.8 1.8"/>',
+      sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>',
+      moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',
+      bulb: '<path d="M9 17.5h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+      cap: '<path d="M2.5 9.5L12 5l9.5 4.5L12 14z"/><path d="M6.5 11.5V16c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-4.5M21.5 9.5v6"/>',
+      exit: '<path d="M10 4H6a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 6 20h4"/><path d="M15 8l4 4-4 4M19 12H9"/>',
+      quiz: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1 1-1.1 1.8M12 17h.01"/>',
+      pin: '<path d="M9 3h6l-1 6 3 3H7l3-3zM12 12v9"/>',
+      trophy: '<path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5M12 14v4M8 21h8M9.5 18h5"/>',
+      zap: '<path d="M13 2.5L5 13.5h6l-1 8 8-11h-6z"/>',
+      rocket: '<path d="M12 3c4 2 6 6 5 11l-2.5 2.5h-5L7 14c-1-5 1-9 5-11z"/><circle cx="12" cy="9.5" r="1.7"/><path d="M9.5 16.5L8 21l4-2 4 2-1.5-4.5"/>',
+      star: '<path d="M12 3.5l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.8l6-.8z"/>',
+      smile: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.3 2.2 2 3.5 2s2.5-.7 3.5-2M9 9.5h.01M15 9.5h.01"/>',
+      home: '<path d="M3.5 11L12 4l8.5 7M6 9.5V20h12V9.5M10 20v-6h4v6"/>',
+      sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+      user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.8-4 3.8-6 7.5-6s6.7 2 7.5 6"/>',
+      undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'
+    };
+    const MAP = {
+      '✅': 'check', '🎉': 'spark', '✨': 'spark', '📝': 'note', '📄': 'file', '⚠': 'warn',
+      '🗓': 'cal', '📅': 'cal', '🔗': 'link', '📚': 'book', '📘': 'book', '📖': 'bookopen',
+      '✏': 'pencil', '🔔': 'bell', '⏳': 'hourglass', '⏰': 'clock', '🔑': 'key', '🎒': 'pack',
+      '🌱': 'sprout', '🔒': 'lock', '📈': 'trend', '📎': 'clip', '🏷': 'tag', '🔍': 'search',
+      '↩': 'undo', '🗑': 'trash', '🔥': 'flame', '🎯': 'target', '✉': 'mail', '💬': 'chat',
+      '🌐': 'globe', '🗄': 'db', '💻': 'laptop', '📊': 'chart', '🧮': 'calc', '🌅': 'sunrise',
+      '🌇': 'sunrise', '☀': 'sun', '🌙': 'moon', '💡': 'bulb', '🧑\u200d🏫': 'cap',
+      '👩\u200d🏫': 'cap', '🚪': 'exit', '🧠': 'quiz', '📌': 'pin', '🏆': 'trophy', '💪': 'zap',
+      '⚡': 'zap', '🚀': 'rocket', '⭐': 'star', '😉': 'smile', '👋': 'smile', '🏠': 'home',
+      '⚙': 'sliders', '👤': 'user'
+    };
+    const keys = Object.keys(MAP).sort((a, b) => b.length - a.length);
+    const src = '(?:' + keys.join('|') + ')\\uFE0F?';
+    const RT = new RegExp(src), RG = new RegExp(src, 'g');
+    const tpl = document.createElement('template'), cache = {};
+    const icon = n => {
+      if (!cache[n]) { tpl.innerHTML = '<svg class="eic eic-' + n + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + P[n] + '</svg>'; cache[n] = tpl.content.firstChild; }
+      return cache[n].cloneNode(true);
+    };
+    const okParent = p => !!p && !(p.closest && p.closest('textarea,option,select,script,style,title,noscript,svg text,[contenteditable="true"]'));
+    function conv(tn) {
+      const s = tn.nodeValue; RG.lastIndex = 0;
+      const frag = document.createDocumentFragment(); let last = 0, m;
+      while ((m = RG.exec(s))) {
+        if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+        frag.appendChild(icon(MAP[m[0].replace(/\uFE0F/g, '')])); last = RG.lastIndex;
+      }
+      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+      if (tn.parentNode) tn.parentNode.replaceChild(frag, tn);
+    }
+    function scan(root) {
+      if (!root) return;
+      if (root.nodeType === 3) { if (RT.test(root.nodeValue) && okParent(root.parentNode)) conv(root); return; }
+      if (root.nodeType !== 1 || !okParent(root)) return;
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => RT.test(n.nodeValue) && okParent(n.parentNode) ? 1 : 2 });
+      const list = []; while (w.nextNode()) list.push(w.currentNode);
+      list.forEach(conv);
+    }
+    const CFG = { childList: true, subtree: true, characterData: true };
+    const mo = new MutationObserver(ms => {
+      mo.disconnect();
+      try { ms.forEach(m => m.type === 'characterData' ? scan(m.target) : m.addedNodes.forEach(scan)); }
+      finally { mo.observe(document.body, CFG); }
+    });
+    const start = () => { scan(document.body); mo.observe(document.body, CFG); };
+    document.body ? start() : document.addEventListener('DOMContentLoaded', start);
+    window.ikon = scan;
+  } catch (e) { console.warn('Ikon satu warna gagal dimuat', e); }
+})();
+
 const SUPABASE_URL = 'https://absfiaukhpovsrmkzbdp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFic2ZpYXVraHBvdnNybWt6YmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzIwODMsImV4cCI6MjEwNzQwODA4M30.gDlLl6LiBJQQOoJllD6Frp4f4zf9UVAHxJSqqreEX5A';
 const BUCKET = 'lampiran';
@@ -369,7 +475,7 @@ function stats(m, em) {
 }
 
 // ---------- helper tampilan ----------
-const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#e8f1ff', '#e5f8ec', '#fff3dc', '#ece8ff', '#ffe9ec', '#e2f6f6'];
+const IC = ['📘', '🌐', '🗄️', '💻', '📊', '🧮'], CL = ['#eefad0', '#eefad0', '#eefad0', '#eefad0', '#eefad0', '#eefad0'];
 const dec = m => { const i = [...m.id].reduce((a, c) => a + c.charCodeAt(0), 0) % IC.length; return { ic: IC[i], col: CL[i], i }; };
 // Warna background pelajaran (dipilih pengajar, bebas): m.warna = '#rrggbb'. Kosong = warna tema bawaan.
 const hexOk = c => /^#[0-9a-f]{6}$/i.test(String(c || '')) ? String(c).toLowerCase() : '';
@@ -599,7 +705,7 @@ function heroB() {
 const miniRing = pct => `<svg class="mring" viewBox="0 0 60 60" style="--p:${pct}" aria-hidden="true"><circle class="bg" cx="30" cy="30" r="25"/><circle class="fg" cx="30" cy="30" r="25"/></svg><b class="cnt" data-to="${pct}" data-suf="%">${pct}%</b>`;
 const SCENE = `<svg viewBox="0 0 232 80" aria-hidden="true">
   <ellipse class="glow" cx="196" cy="42" rx="30" ry="24" fill="#ffe9a8" opacity=".38"/>
-  <text class="ide i1" x="62" y="13" font-size="12">💡</text><text class="ide i2" x="62" y="13" font-size="12">✨</text><text class="ide i3" x="62" y="13" font-size="12">📚</text>
+  <g class="ide i1"><svg x="60" y="0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4d3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg></g><g class="ide i2"><svg x="60" y="0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4d3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg></g><g class="ide i3"><svg x="60" y="0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4d3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19V5a2 2 0 0 1 2-2h12v15h-12a2 2 0 0 0-2 2z"/><path d="M4.5 19a2 2 0 0 0 2 2h12v-3"/></svg></g>
   <rect x="0" y="63" width="232" height="5" rx="2.5" fill="#b98450"/><rect x="6" y="68" width="220" height="3" rx="1.5" fill="#000" opacity=".08"/>
   <path d="M28 63V51a16 16 0 0 1 16-16h12a16 16 0 0 1 16 16V63Z" fill="#c6f04e"/>
   <g class="head"><rect x="45" y="30" width="10" height="9" fill="#e8b48c"/><circle cx="50" cy="22" r="13" fill="#f2c5a0"/>
@@ -737,7 +843,7 @@ function jdCard(L, pf) {
   const c = nextJadwal(L), btn = '<button class="btn lime jd-btn" onclick="go(\'jadwal\')">Lihat selengkapnya →</button>';
   if (!c) return `<div class="card jd jd-none"><div class="jd-ic" aria-hidden="true">📅</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">Belum ada jadwal yang terbaca</b><div class="jd-m"><span class="jd-when">Pengingat muncul di sini setelah pengajar mengisi jadwal pelajaran.</span></div></div>${btn}</div>`;
   const d = dec(c.m);
-  return `<div class="card jd${c.ongoing ? ' on' : ''}" style="--jc:${d.col}"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div></div>${btn}</div>`;
+  return `<div class="card jd${c.ongoing ? ' on' : ''}" style="--jc:var(--g7)"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div></div>${btn}</div>`;
 }
 // Detak tiap detik: ubah teks hitung mundur; bila sesi berganti (mulai/selesai), gambar ulang
 function jdTick() {
@@ -755,10 +861,10 @@ function jadwalPage() {
   const nSesi = Object.values(by).reduce((a, x) => a + x.length, 0), nHari = (by[today] || []).length;
   const top = `<section class="pg-hero jd-hero"><span class="pgd d1" aria-hidden="true">📅</span><span class="pgd d2" aria-hidden="true">⏰</span><span class="pgd d3" aria-hidden="true">🗓️</span><div class="pgh-txt"><span class="jd-date">${tglID()}</span><h1>Jadwal pelajaran</h1><p class="quote">Jadwal mingguan semua pelajaran yang kamu ikuti.</p><div class="jd-stats"><span class="jd-stat">${L.length} pelajaran</span><span class="jd-stat">${nSesi} sesi per minggu</span><span class="jd-stat">${nHari} sesi hari ini</span></div></div></section>`;
   if (!L.length) return back + top + empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar, lalu jadwal pelajarannya muncul di sini.', btnJoin);
-  const nx = c ? `<div class="card jd jd-big${c.ongoing ? ' on' : ''}" style="--jc:${dec(c.m).col}"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div><small class="jd-by">Pengajar: ${esc(c.m.dosenNama)}</small></div><button class="btn ghost jd-btn" onclick="go('course','${c.m.id}')">Buka pelajaran →</button></div>` : '';
+  const nx = c ? `<div class="card jd jd-big${c.ongoing ? ' on' : ''}" style="--jc:var(--g7)"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div><small class="jd-by">Pengajar: ${esc(c.m.dosenNama)}</small></div><button class="btn ghost jd-btn" onclick="go('course','${c.m.id}')">Buka pelajaran →</button></div>` : '';
   const days = [1, 2, 3, 4, 5, 6, 0].map((dn, i) => {
     const it = (by[dn] || []).sort((a, b) => (a.s.sm == null ? 1e4 : a.s.sm) - (b.s.sm == null ? 1e4 : b.s.sm));
-    return `<section class="jd-day${dn === today ? ' now' : ''}${it.length ? '' : ' none'}" style="--i:${i}"><header><b>${HARI[dn]}</b>${dn === today ? '<span class="jd-today">Hari ini</span>' : ''}</header>${it.length ? it.map(({ m, s }) => { const d = dec(m); return `<button type="button" class="jd-it${c && c.m.id === m.id && c.s === s ? ' next' : ''}" style="--jc:${d.col}" onclick="go('course','${m.id}')"><span class="jd-tm">${s.sm != null ? jdRange(s) : 'Sepanjang hari'}</span><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}</small></button>`; }).join('') : '<p class="jd-free">Tidak ada jadwal</p>'}</section>`;
+    return `<section class="jd-day${dn === today ? ' now' : ''}${it.length ? '' : ' none'}" style="--i:${i}"><header><b>${HARI[dn]}</b>${dn === today ? '<span class="jd-today">Hari ini</span>' : ''}</header>${it.length ? it.map(({ m, s }) => { const d = dec(m); return `<button type="button" class="jd-it${c && c.m.id === m.id && c.s === s ? ' next' : ''}" style="--jc:var(--g7)" onclick="go('course','${m.id}')"><span class="jd-tm">${s.sm != null ? jdRange(s) : 'Sepanjang hari'}</span><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}</small></button>`; }).join('') : '<p class="jd-free">Tidak ada jadwal</p>'}</section>`;
   }).join('');
   const nn = none.length ? `<h2>Belum ada jadwal</h2><div class="jd-nolist">${none.map(m => `<button type="button" class="jd-it" style="--jc:${dec(m).col}" onclick="go('course','${m.id}')"><b>${esc(m.nama)}</b><small>${m.jadwal ? 'Jadwal tertulis “' + esc(m.jadwal) + '” belum terbaca otomatis. Tanyakan ke pengajar agar jadwalnya diisi ulang.' : 'Pengajar belum mengisi jadwal.'}</small></button>`).join('')}</div>` : '';
   return back + top + nx + `<div class="jd-week">${days}</div>` + nn;
@@ -771,7 +877,7 @@ function home() {
     const kls = L.reduce((a, m) => a + m.kelas.length, 0), mhs = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
     const nDinilai = ringkas(U).tiles[5][0], pfD = prefOf(U);
     const hero = head();
-    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#e8f1ff', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#fff0d2', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#dff5e8', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
+    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#eefad0', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#eefad0', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#eefad0', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
   }
   if (!L.length) return head() + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
   const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
@@ -785,7 +891,7 @@ function home() {
   return hero + abs.map(({ m, x }) => `<div class="card absen"><div><b>Absen dibuka · ${esc(m.nama)}</b><div class="quote">Pertemuan ${x.n}: ${esc(x.topik)} · sisa waktu ${cd(x)}</div></div><button class="btn lime" onclick="absenSendiri('${m.id}',${x.n})">Absen sekarang</button></div>`).join('')
     + jdCard(L, pf)
     + soonHtml(todo, pf)
-    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#fff0d2', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', t.done, '✅', '#dff5e8', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
+    + `<h2>Progres keseluruhan</h2><div class="grid3">${sc('Tugas yang harus diselesaikan', t.todo, '📝', '#eefad0', t.todo ? 'var(--red)' : '', subTodo, '', "statDetail('todo')", statPop('todo', 'right'))}${sc('Total tugas selesai', t.done, '✅', '#eefad0', '', t.tasks ? `dari ${t.tasks} tugas &amp; quiz` : '', '', "statDetail('done')", statPop('done', 'below'))}${sc('Total pertemuan', t.held, miniRing(pct), 'transparent', '', subHadir, 'mr', "statDetail('pert')", statPop('pert', 'left'))}</div>`
     + (todo.length ? `<h2>Perlu dikerjakan</h2>${todo.slice(0, 6).map(([m, x, k, dl]) => `<button class="todo" onclick="bukaItem('${m.id}',${x.n})"><span class="chip ${k === 'Quiz' ? 'c-bl' : k === 'Tugas' ? 'c-iz' : 'c-no'}">${k}</span><span><b>${esc(m.nama)}</b> · Pertemuan ${x.n}: ${esc(x.topik)}</span>${dlChip(dl)}</button>`).join('')}` : '')
     + `<h2>Pelajaran</h2>${courseCards(L)}`;
 }

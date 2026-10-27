@@ -1436,3 +1436,19 @@ html .tr{z-index:100}   /* panduan spotlight di atas header */
   html .tclock{display:none}
 }
 @media(prefers-reduced-motion:reduce){.mbtn span,html aside.mopen>nav,html aside.mopen .out{transition:none;animation:none}}
+
+/* ===== Ikon satu warna (pengganti emoji berwarna) =====
+   Ikon otomatis mengikuti warna teks di sekitarnya. Atur warna per bagian di bawah ini. */
+.eic{width:1.12em;height:1.12em;vertical-align:-.2em;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.pc-ic,.prg-ic,.ic,.jd-ic,.addic,.mkitem .ic{color:var(--g7)}
+.hv-ic{color:#fff}
+.hv-ic .eic,.pc-ic .eic,.prg-ic .eic,.jd-ic .eic{stroke-width:1.9}
+.big-ic{width:76px;height:76px;margin:0 auto 8px;border-radius:50%;background:var(--limeS);color:var(--g7);display:grid;place-items:center;font-size:34px}
+.big-ic .eic{stroke-width:1.7}
+.pgd{color:var(--g7)}
+.jd-hero .pgd,.fl-ic,.prg-f{color:var(--lime)}
+.prg-badge .bi{color:var(--mu)}
+.prg-badge.got .bi{color:var(--g9)}
+.kc i,.kc i .eic{color:#0c2a1f}
+.eic-warn{stroke-width:2.1}
+.kc i .eic{width:19px;height:19px}
