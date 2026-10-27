@@ -1342,3 +1342,17 @@ html.sb-min .logo{padding-bottom:14px}
 .g-prog .stat .ic.mr b{font-size:11.5px}
 .g-prog .mring circle{stroke-width:6.5}
 .g-prog .stat .more{top:auto;right:14px;bottom:6px;font-size:11px}
+
+/* ===== Judul website: font Sora, dua warna ===== */
+.logo .lg-t{display:block;font-family:'Sora','Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:19px;letter-spacing:-.4px;line-height:1.1;color:#fff}
+.logo .lg-t b{font-weight:800;background:linear-gradient(90deg,#d9f76a,#a9e03a);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.logo small{letter-spacing:.3px}
+
+/* ===== Tombol buka/tutup menu: tab hijau di tepi sidebar (tanpa animasi) ===== */
+.sb-tg{top:26px;right:-20px;width:20px;height:58px;border-radius:0 16px 16px 0;border:2px solid #c5f04a;border-left:0;background:linear-gradient(180deg,#2a8a62,#0f3a2b);color:#c5f04a;box-shadow:5px 6px 14px #0c2a1f33,inset 0 1px 0 #ffffff2e;transition:none;animation:none}
+.sb-tg:hover{background:linear-gradient(180deg,#34a276,#14503b);color:#fff;transform:none}
+.sb-tg:active{transform:none}
+.sb-tg:focus-visible{outline:3px solid #c5f04a;outline-offset:3px}
+.sb-tg svg{width:15px;height:15px;transition:none;margin-left:-2px}
+.sb-tg::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);padding:6px 11px;border-radius:9px;background:var(--g9);color:var(--lime);font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 8px 20px #0c2a1f44;opacity:0;pointer-events:none}
+.sb-tg:hover::after,.sb-tg:focus-visible::after{opacity:1}

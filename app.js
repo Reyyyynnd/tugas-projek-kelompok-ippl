@@ -2804,7 +2804,7 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'sb-tg';
   b.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
-  const sync = () => { const m = root.classList.contains('sb-min'); b.setAttribute('aria-expanded', String(!m)); b.setAttribute('aria-label', m ? 'Buka menu samping' : 'Tutup menu samping'); b.title = m ? 'Buka menu' : 'Tutup menu'; };
+  const sync = () => { const m = root.classList.contains('sb-min'); b.setAttribute('aria-expanded', String(!m)); b.setAttribute('aria-label', m ? 'Buka menu samping' : 'Tutup menu samping'); b.title = m ? 'Buka menu' : 'Tutup menu'; b.dataset.tip = m ? 'Buka menu' : 'Tutup menu'; };
   b.onclick = () => { const m = root.classList.toggle('sb-min'); try { localStorage.setItem(KEY, m ? '1' : '0'); } catch (e) {} sync(); };
   side.appendChild(b); sync();
 })();

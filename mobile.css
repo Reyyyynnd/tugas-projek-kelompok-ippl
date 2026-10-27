@@ -1464,3 +1464,8 @@ html .tr{z-index:100}   /* panduan spotlight di atas header */
 .g-prog .stat .ic.mr b{font-size:11.5px}
 .g-prog .mring circle{stroke-width:6.5}
 .g-prog .stat .more{top:auto;right:14px;bottom:6px;font-size:11px}
+
+/* ===== Judul website: font Sora, dua warna ===== */
+.logo .lg-t{display:block;font-family:'Sora','Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:19px;letter-spacing:-.4px;line-height:1.1;color:#fff}
+.logo .lg-t b{font-weight:800;background:linear-gradient(90deg,#d9f76a,#a9e03a);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.logo small{letter-spacing:.3px}
