@@ -1469,3 +1469,19 @@ html .tr{z-index:100}   /* panduan spotlight di atas header */
 .logo .lg-t{display:block;font-family:'Sora','Plus Jakarta Sans',system-ui,sans-serif;font-weight:800;font-size:19px;letter-spacing:-.4px;line-height:1.1;color:#fff}
 .logo .lg-t b{font-weight:800;background:linear-gradient(90deg,#d9f76a,#a9e03a);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
 .logo small{letter-spacing:.3px}
+
+/* ===== Peringatan: disarankan membuka di desktop (hanya tampilan HP) ===== */
+html.dsk-open{overflow:hidden}
+.dsk-warn{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;padding:20px;background:#0c2a1fcc;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.dsk-card{width:100%;max-width:380px;max-height:100%;overflow:auto;background:#fff;color:var(--tx);border-radius:20px;padding:24px 20px 20px;text-align:center;box-shadow:0 24px 60px #0008;border-top:5px solid var(--lime)}
+.dsk-ic{width:64px;height:64px;margin:0 auto 12px;border-radius:50%;background:var(--limeS);color:var(--g7);display:grid;place-items:center}
+.dsk-ic svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dsk-card h3{margin:0 0 8px;font-size:19px;line-height:1.25}
+.dsk-card p{margin:0 0 14px;font-size:12.5px;line-height:1.55;color:var(--mu)}
+.dsk-card p b{color:var(--g7)}
+.dsk-how{text-align:left;background:var(--bg);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.5}
+.dsk-how>b{display:block;margin-bottom:8px;font-size:13px;color:var(--g7)}
+.dsk-how div+div{margin-top:8px}
+.dsk-how span{display:inline-block;margin-right:6px;padding:1px 9px;border-radius:99px;background:var(--g8);color:var(--lime);font-size:11.5px;font-weight:800}
+.dsk-ok{width:100%;min-height:46px;border:0;border-radius:12px;background:var(--lime);color:var(--g9);font:inherit;font-size:15px;font-weight:800;cursor:pointer}
+.dsk-ok:focus-visible{outline:3px solid var(--g7);outline-offset:2px}

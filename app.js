@@ -104,6 +104,33 @@
   } catch (e) { console.warn('Ikon satu warna gagal dimuat', e); }
 })();
 
+/* ===== Saran memakai desktop: muncul saat website dibuka di layar HP (lebar <= 820px) =====
+   Hanya muncul sekali per sesi buka website; ditutup dengan tombol "Mengerti". Gayanya ada di mobile.css (.dsk-warn). */
+(function () {
+  try {
+    if (!window.matchMedia || !matchMedia('(max-width:820px)').matches) return;
+    const KEY = 'kb-dsk';
+    try { if (sessionStorage.getItem(KEY) === '1') return; } catch (e) {}
+    const build = () => {
+      if (document.querySelector('.dsk-warn')) return;
+      const w = document.createElement('div');
+      w.className = 'dsk-warn'; w.setAttribute('role', 'dialog'); w.setAttribute('aria-modal', 'true'); w.setAttribute('aria-labelledby', 'dskT');
+      w.innerHTML = '<div class="dsk-card">'
+        + '<div class="dsk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>'
+        + '<h3 id="dskT">Lebih nyaman dibuka di desktop</h3>'
+        + '<p>Untuk pengalaman pengguna yang bagus, kami menyarankan membuka KelasBelajar di <b>desktop</b> atau menggunakan <b>tampilan desktop</b> pada layar HP.</p>'
+        + '<div class="dsk-how"><b>Cara memakai tampilan desktop di HP</b>'
+        + '<div><span>Browser</span>Buka menu browser (biasanya ikon titik tiga ⋮), lalu centang “Situs desktop”.</div>'
+        + '<div><span>Safari</span>Ketuk ikon “aA” di kolom alamat, lalu pilih “Minta Situs Desktop”.</div></div>'
+        + '<button type="button" class="dsk-ok">Mengerti</button></div>';
+      const tutup = () => { try { sessionStorage.setItem(KEY, '1'); } catch (e) {} w.remove(); document.documentElement.classList.remove('dsk-open'); };
+      w.querySelector('.dsk-ok').onclick = tutup;
+      document.body.appendChild(w); document.documentElement.classList.add('dsk-open');
+    };
+    document.body ? build() : document.addEventListener('DOMContentLoaded', build);
+  } catch (e) { console.warn('Saran desktop gagal dimuat', e); }
+})();
+
 const SUPABASE_URL = 'https://absfiaukhpovsrmkzbdp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFic2ZpYXVraHBvdnNybWt6YmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzIwODMsImV4cCI6MjEwNzQwODA4M30.gDlLl6LiBJQQOoJllD6Frp4f4zf9UVAHxJSqqreEX5A';
 const BUCKET = 'lampiran';
