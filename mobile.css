@@ -1405,3 +1405,7 @@ html.dsk-open{overflow:hidden}
 #vKode{letter-spacing:.4em;font-size:22px;font-weight:800;text-align:center}
 #vKode::placeholder{letter-spacing:.4em;font-weight:600}
 #vKirim{font-weight:700}
+
+/* ===== Logo lebih besar ===== */
+.logo img{width:50px;height:50px;border-radius:14px}
+html aside .logo img{width:44px;height:44px;border-radius:12px}

@@ -220,8 +220,9 @@ async function loadAll(soft) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return false;
   const au = session.user, w0 = WSEQ;
-  const [pr, mk, jn, pg] = await Promise.all([
-    fetchAll('profiles', ['uid']), fetchAll('mk', ['id']), fetchAll('bergabung', ['mk_id', 'mhs']), fetchAll('progres', ['mk_id', 'email'])
+  const [pr, mk, jn, pg, mv] = await Promise.all([
+    fetchAll('profiles', ['uid']), fetchAll('mk', ['id']), fetchAll('bergabung', ['mk_id', 'mhs']), fetchAll('progres', ['mk_id', 'email']),
+    sb.from('motivasi').select('teks').order('id').then(r => r, () => null)
   ]);
   if (soft && WSEQ !== w0) return 'stale';
   const users = pr.map(r => ({
@@ -230,6 +231,8 @@ async function loadAll(soft) {
   }));
   const me = users.find(u => u.uid === au.id);
   if (!me) { await sb.auth.signOut({ scope: 'local' }); return false; }
+  // Kata motivasi di beranda dikelola admin (tabel "motivasi"); kalau tabel belum ada/kosong, pakai kata bawaan
+  if (mv && Array.isArray(mv.data)) { const qs = mv.data.map(r => String(r.teks || '').trim()).filter(Boolean); if (qs.length) QUOTES = qs; }
   CACHE.lms_users = users;
   CACHE.lms_mk = mk.map(r => ({ ...r.data, id: r.id, dosen: r.dosen }));
   CACHE.lms_join = jn.map(r => ({ mhs: r.mhs, mkId: r.mk_id, kelasId: r.kelas_id, at: Number(r.waktu) }));
@@ -660,7 +663,7 @@ function soonTick() {
 const sapa = () => { const h = new Date().getHours(); return h < 11 ? ['Selamat pagi', '🌅'] : h < 15 ? ['Selamat siang', '☀️'] : h < 18 ? ['Selamat sore', '🌇'] : ['Selamat malam', '🌙']; };
 const tglID = () => new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const skyOf = () => { const h = new Date().getHours(); return h < 11 ? 'pagi' : h < 15 ? 'siang' : h < 18 ? 'sore' : 'malam'; };
-const QUOTES = [QUOTE,
+let QUOTES = [QUOTE,
   '“Pendidikan adalah senjata paling ampuh untuk mengubah dunia.” – Nelson Mandela',
   '“Investasi dalam pengetahuan memberikan bunga terbaik.” – Benjamin Franklin',
   '“Satu-satunya cara melakukan pekerjaan hebat adalah mencintai apa yang kamu lakukan.” – Steve Jobs'];
@@ -671,7 +674,7 @@ function skyHtml(k) {
 function heroB() {
   const [g, em] = sapa(), k = skyOf();
   return `<section class="hero-b ${k}">${skyHtml(k)}<span class="blob b1"></span><span class="blob b2"></span>
-    <div class="hb-txt"><div class="hb-eyebrow">${em} ${g} · ${tglID()}</div><h1>Selamat datang, ${esc(U.nama)}!</h1><p class="hb-quote" id="hbQuote">${QUOTES[0]}</p></div></section>`;
+    <div class="hb-txt"><div class="hb-eyebrow">${em} ${g} · ${tglID()}</div><h1>Selamat datang, ${esc(U.nama)}!</h1><p class="hb-quote" id="hbQuote">${esc(QUOTES[0])}</p></div></section>`;
 }
 const miniRing = pct => `<svg class="mring" viewBox="0 0 60 60" style="--p:${pct}" aria-hidden="true"><circle class="bg" cx="30" cy="30" r="25"/><circle class="fg" cx="30" cy="30" r="25"/></svg><b class="cnt" data-to="${pct}" data-suf="%">${pct}%</b>`;
 const SCENE = `<svg viewBox="0 0 232 80" aria-hidden="true">

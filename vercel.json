@@ -1,13 +1,73 @@
 {
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/beranda", "destination": "/index.html" },
-    { "source": "/pelajaran/:path*", "destination": "/index.html" },
-    { "source": "/progres", "destination": "/index.html" },
-    { "source": "/jadwal", "destination": "/index.html" },
-    { "source": "/pengaturan/:path*", "destination": "/index.html" },
-    { "source": "/profil", "destination": "/profil.html" },
-    { "source": "/login", "destination": "/login.html" },
-    { "source": "/register", "destination": "/login.html" }
+    {
+      "source": "/",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/beranda",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/pelajaran/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/progres",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/jadwal",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/pengaturan/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/profil",
+      "destination": "/profil.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/register",
+      "destination": "/login.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/admin",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
   ]
 }

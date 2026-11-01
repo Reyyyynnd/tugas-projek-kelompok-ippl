@@ -1,0 +1,301 @@
+/* Panel Admin KelasBelajar – semua perubahan data lewat /api/admin (server memakai service role). */
+(() => {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const TK = 'kb-admin-token';
+  let TOKEN = '', D = null, tab = 'akun', fRole = 'all', qAkun = '', qPel = '', busy = false;
+  try { TOKEN = sessionStorage.getItem(TK) || ''; } catch (e) {}
+
+  const P = {
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c2 .6 3.2 2.2 3.5 5.2"/>',
+    cap: '<path d="M2.5 9.5L12 5l9.5 4.5L12 14z"/><path d="M6.5 11.5V16c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-4.5M21.5 9.5v6"/>',
+    pack: '<path d="M9 6V5a3 3 0 0 1 6 0v1"/><rect x="5" y="6" width="14" height="15" rx="4"/><path d="M9 14h6"/>',
+    book: '<path d="M4.5 19V5a2 2 0 0 1 2-2h12v15h-12a2 2 0 0 0-2 2z"/><path d="M4.5 19a2 2 0 0 0 2 2h12v-3"/>',
+    grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+    shield: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M3 3l18 18M10.6 6a9.5 9.5 0 0 1 1.4-.1c6 0 9.5 6.1 9.5 6.1a16 16 0 0 1-3.3 3.8M6.5 7.2A16 16 0 0 0 2.5 12S6 18.1 12 18.1c1.5 0 2.8-.4 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    edit: '<path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    out: '<path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M16 8l4 4-4 4M20 12H9"/>',
+    quote: '<path d="M5 17.5c0-4 1.5-7 5-9M13 17.5c0-4 1.5-7 5-9"/><path d="M5 17.5h4v-4H5zM13 17.5h4v-4h-4z"/>',
+    list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'
+  };
+  const ic = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+
+  const fmtD = iso => { const t = Date.parse(iso); return t ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'; };
+  const fmtDT = iso => { const t = Date.parse(iso); return t ? new Date(t).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Belum pernah';  };
+  const ava = (u, cls = '') => `<span class="av ${cls}">${u.foto ? `<img src="${esc(u.foto)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : esc(String(u.nama || '?').trim().charAt(0).toUpperCase())}</span>`;
+  const chipRole = r => `<span class="chip ${r === 'Pengajar' ? 'p' : 's'}">${esc(r)}</span>`;
+
+  let tT = 0;
+  function toast(m, bad) { const t = $('#toast'); t.textContent = m; t.className = 'on' + (bad ? ' bad' : ''); clearTimeout(tT); tT = setTimeout(() => { t.className = ''; }, 3200); }
+
+  async function api(action, payload = {}) {
+    let r, j = {};
+    try {
+      r = await fetch('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {}) }, body: JSON.stringify({ action, ...payload }) });
+    } catch (e) { throw new Error('Tidak bisa terhubung ke server. Periksa koneksi internet.'); }
+    try { j = await r.json(); } catch (e) { j = {}; }
+    if (r.status === 401 && action !== 'login') { keluar('Sesi berakhir. Silakan masuk lagi.'); throw new Error('Sesi berakhir.'); }
+    if (r.status === 404 && !j.error) throw new Error('API admin tidak ditemukan. Pastikan folder api/ ikut ter-deploy di Vercel.');
+    if (!r.ok) throw new Error(j.error || 'Kesalahan server (' + r.status + ').');
+    return j;
+  }
+
+  /* ---------- derived ---------- */
+  const byEmail = () => { const o = {}; D.users.forEach(u => { o[u.email] = u; }); return o; };
+  const joinsOf = id => D.join.filter(j => j.mk === id);
+  const nPelajaranUser = u => u.role === 'Pengajar' ? D.mk.filter(m => m.dosen === u.email).length : D.join.filter(j => j.mhs === u.email).length;
+
+  /* ---------- layar login ---------- */
+  function viewLogin(msg) {
+    closeModal();
+    $('#app').innerHTML = `<div class="lg"><form class="lg-card" id="fLg" novalidate>
+      <div class="lg-top"><img src="/assets/logo.svg" alt="" width="60" height="60"><div><div class="lg-t">Kelas<b>Belajar</b></div><span class="badge">${ic('shield')} Admin</span></div></div>
+      <h1>Masuk sebagai admin</h1><p class="sub">Area khusus pengelola. Akun admin didaftarkan oleh superadmin melalui database, bukan lewat website.</p>
+      <label class="f">Email admin<input type="email" id="aEm" autocomplete="username" required></label>
+      <label class="f">Kata sandi<span class="pw"><input type="password" id="aPw" autocomplete="current-password" required><button type="button" id="aEye" aria-label="Tampilkan kata sandi">${ic('eye')}</button></span></label>
+      <p class="err" id="aErr" role="alert">${esc(msg || '')}</p>
+      <button class="btn lime" type="submit" id="aGo">Masuk</button>
+      <a class="lg-back" href="/login">← Kembali ke KelasBelajar</a></form></div>`;
+    eyeToggle('#aEye', '#aPw');
+    $('#aEm').focus();
+    $('#fLg').onsubmit = async e => {
+      e.preventDefault();
+      const err = $('#aErr'), b = $('#aGo'); err.textContent = '';
+      const email = $('#aEm').value.trim(), pass = $('#aPw').value;
+      if (!email || !pass) { err.textContent = 'Isi email dan kata sandi admin.'; return; }
+      b.disabled = true; b.textContent = 'Memeriksa…';
+      try {
+        const j = await api('login', { email, pass });
+        TOKEN = j.token; try { sessionStorage.setItem(TK, TOKEN); } catch (x) {}
+        await mulai();
+      } catch (x) { err.textContent = x.message; b.disabled = false; b.textContent = 'Masuk'; $('#aPw').value = ''; $('#aPw').focus(); }
+    };
+  }
+  function eyeToggle(btn, inp) {
+    const b = $(btn), i = $(inp); if (!b || !i) return;
+    b.onclick = () => { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.innerHTML = ic(show ? 'eyeoff' : 'eye'); b.setAttribute('aria-label', show ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'); };
+  }
+  function keluar(msg) { TOKEN = ''; D = null; try { sessionStorage.removeItem(TK); } catch (e) {} viewLogin(msg); }
+
+  /* ---------- dashboard ---------- */
+  async function mulai() {
+    $('#app').innerHTML = `<header class="hd"><div class="hd-in"><img src="/assets/logo.svg" alt="" width="46" height="46"><div><div class="lg-t">Kelas<b>Belajar</b></div></div><span class="badge" style="margin:0 0 0 4px;background:var(--lime);color:var(--g9)">Admin</span><span class="sp"></span><span class="wh" id="wh"></span><button class="btn" id="bRef" type="button" title="Muat ulang data">${ic('grid')}<span>Muat ulang</span></button><button class="btn" id="bOut" type="button">${ic('out')}<span>Keluar</span></button></div></header>
+      <div class="wrap" id="wrap"><div class="loading">Memuat data…</div></div>`;
+    try { const pl = JSON.parse(decodeURIComponent(escape(atob(TOKEN.split('.')[0].replace(/-/g, '+').replace(/_/g, '/'))))); $('#wh').textContent = pl.nm || pl.em || ''; } catch (e) {}
+    $('#bOut').onclick = () => keluar('');
+    $('#bRef').onclick = () => muat(true);
+    await muat(false);
+  }
+  async function muat(notif) {
+    if (busy) return; busy = true;
+    try { D = await api('data'); render(); if (notif) toast('Data diperbarui'); }
+    catch (e) { if (TOKEN) $('#wrap').innerHTML = `<div class="panel"><div class="empty">${esc(e.message)}<div style="margin-top:12px"><button class="btn lime" id="bRetry" type="button">Coba lagi</button></div></div></div>`, $('#bRetry').onclick = () => { busy = false; muat(false); }; }
+    finally { busy = false; }
+  }
+
+  function stat(i, v, l) { return `<div class="st"><span class="si">${ic(i)}</span><div><div class="sv">${v}</div><div class="sl">${l}</div></div></div>`; }
+  function render() {
+    if (!D || !$('#wrap')) return;
+    const nT = D.users.filter(u => u.role === 'Pengajar').length, nS = D.users.filter(u => u.role === 'Partisipan').length;
+    const nK = D.mk.reduce((a, m) => a + m.kelas.length, 0);
+    $('#wrap').innerHTML = `<h2>Ringkasan</h2><p class="lead">Kelola akun, pelajaran, dan kata motivasi KelasBelajar.</p>
+      <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.mk.length, 'Total pelajaran')}${stat('grid', nK, 'Total kelas')}</div>
+      <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="akun" class="${tab === 'akun' ? 'on' : ''}">${ic('users')} Akun</button><button type="button" role="tab" data-tab="pel" class="${tab === 'pel' ? 'on' : ''}">${ic('book')} Pelajaran</button><button type="button" role="tab" data-tab="mot" class="${tab === 'mot' ? 'on' : ''}">${ic('quote')} Kata motivasi</button></div>
+      <div id="pane"></div>`;
+    $('#wrap').querySelectorAll('[data-tab]').forEach(b => { b.onclick = () => { tab = b.dataset.tab; render(); }; });
+    ({ akun: paneAkun, pel: panePel, mot: paneMot })[tab]();
+  }
+
+  /* ----- tab Akun ----- */
+  function paneAkun() {
+    $('#pane').innerHTML = `<div class="panel"><div class="tb"><div class="grow"><input type="search" id="sAk" placeholder="Cari nama, Gmail, No. HP, ID, atau minat belajar…" value="${esc(qAkun)}" aria-label="Cari akun"></div>
+      <select id="fRl" aria-label="Filter peran"><option value="all">Semua peran</option><option value="Pengajar">Pengajar</option><option value="Partisipan">Partisipan</option></select>
+      <button class="btn lime" id="bAdd" type="button">${ic('plus')} Tambah akun</button></div><div id="tAk"></div></div>`;
+    $('#fRl').value = fRole;
+    $('#sAk').oninput = e => { qAkun = e.target.value; tabelAkun(); };
+    $('#fRl').onchange = e => { fRole = e.target.value; tabelAkun(); };
+    $('#bAdd').onclick = formAkun;
+    tabelAkun();
+  }
+  function tabelAkun() {
+    const q = qAkun.trim().toLowerCase();
+    const rows = D.users.filter(u => (fRole === 'all' || u.role === fRole) && (!q || [u.nama, u.email, u.hp, u.id, u.prodi].some(v => String(v || '').toLowerCase().includes(q))));
+    $('#tAk').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Nama</th><th>Peran</th><th>Gmail</th><th>No. HP</th><th>Minat belajar</th><th>Pelajaran</th><th>Terdaftar</th><th></th></tr></thead><tbody>${rows.map(u => `<tr>
+      <td><div class="who">${ava(u)}<div><b>${esc(u.nama)}</b><span class="m">ID: ${esc(u.id || '—')}</span></div></div></td><td>${chipRole(u.role)}</td><td>${esc(u.email)}</td><td>${esc(u.hp || '—')}</td><td>${esc(u.prodi || '—')}</td>
+      <td>${nPelajaranUser(u)}<span class="m">${u.role === 'Pengajar' ? 'dibuat' : 'diikuti'}</span></td><td style="white-space:nowrap">${fmtD(u.dibuat)}</td>
+      <td class="act"><button class="btn ghost sm" type="button" data-det="${esc(u.uid)}">${ic('eye')} Detail</button><button class="btn red sm" type="button" data-del="${esc(u.uid)}" aria-label="Hapus akun ${esc(u.nama)}">${ic('trash')} Hapus</button></td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">${D.users.length ? 'Tidak ada akun yang cocok dengan pencarian.' : 'Belum ada akun.'}</div>`;
+    $('#tAk').querySelectorAll('[data-det]').forEach(b => { b.onclick = () => detailAkun(b.dataset.det); });
+    $('#tAk').querySelectorAll('[data-del]').forEach(b => { b.onclick = () => hapusAkun(b.dataset.del); });
+  }
+
+  /* ----- modal ----- */
+  function modal(html, wide) {
+    $('#layer').innerHTML = `<div class="mdl" id="mdl"><div class="sheet${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><button class="x" type="button" id="mx" aria-label="Tutup">${ic('x')}</button>${html}</div></div>`;
+    $('#mx').onclick = closeModal;
+    $('#mdl').onmousedown = e => { if (e.target.id === 'mdl') closeModal(); };
+  }
+  function closeModal() { const l = $('#layer'); if (l) l.innerHTML = ''; }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  function formAkun() {
+    modal(`<h3>Tambah akun</h3><p class="sub">Akun langsung aktif (Gmail dianggap terverifikasi) dan bisa dipakai masuk di halaman login biasa.</p>
+      <form id="fAk" novalidate><fieldset class="roles"><legend>Peran</legend><label><input type="radio" name="role" value="Partisipan" checked> Partisipan</label><label><input type="radio" name="role" value="Pengajar"> Pengajar</label></fieldset>
+      <div class="fg"><label class="f full">Nama lengkap<input id="nNama" maxlength="100" autocomplete="off" required></label>
+      <label class="f">ID<input id="nId" maxlength="30" placeholder="tanda pengenal" autocomplete="off" required></label>
+      <label class="f">Minat belajar<input id="nProdi" maxlength="60" placeholder="contoh: teknik informatika" autocomplete="off" required></label>
+      <label class="f">Gmail<input type="email" id="nEm" placeholder="nama@gmail.com" autocomplete="off" required></label>
+      <label class="f">No. HP<input id="nHp" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="off" required></label>
+      <label class="f full">Kata sandi (min. 8 karakter)<span class="pw"><input type="password" id="nPw" autocomplete="new-password" required><button type="button" id="nEye" aria-label="Tampilkan kata sandi">${ic('eye')}</button></span></label></div>
+      <p class="err" id="nErr" role="alert"></p><div class="btns"><button class="btn ghost" type="button" id="nBatal">Batal</button><button class="btn lime" type="submit" id="nGo">Buat akun</button></div></form>`);
+    eyeToggle('#nEye', '#nPw'); $('#nBatal').onclick = closeModal; $('#nNama').focus();
+    $('#fAk').onsubmit = async e => {
+      e.preventDefault();
+      const err = $('#nErr'), go = $('#nGo'); err.textContent = '';
+      const d = { role: $('#fAk input[name=role]:checked').value, nama: $('#nNama').value.trim(), id: $('#nId').value.trim(), prodi: $('#nProdi').value.trim(), email: $('#nEm').value.trim().toLowerCase(), hp: $('#nHp').value.trim(), pass: $('#nPw').value };
+      if (!d.nama) return void (err.textContent = 'Nama lengkap wajib diisi.');
+      if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return void (err.textContent = 'ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
+      if (d.prodi.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
+      if (!/^[a-z0-9._%+-]+@gmail\.com$/i.test(d.email)) return void (err.textContent = 'Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
+      if (!/^0\d{8,13}$/.test(d.hp)) return void (err.textContent = 'Nomor HP tidak valid. Contoh: 081234567890.');
+      if (d.pass.length < 8) return void (err.textContent = 'Kata sandi minimal 8 karakter.');
+      go.disabled = true; go.textContent = 'Membuat…';
+      try { await api('akun_tambah', d); closeModal(); await muatTenang(); toast('Akun ' + d.nama + ' berhasil dibuat'); }
+      catch (x) { err.textContent = x.message; go.disabled = false; go.textContent = 'Buat akun'; }
+    };
+  }
+  async function muatTenang() { D = await api('data'); render(); }
+
+  function detailAkun(uid) {
+    const u = D.users.find(x => x.uid === uid); if (!u) return;
+    let daftar = '';
+    if (u.role === 'Pengajar') {
+      const mine = D.mk.filter(m => m.dosen === u.email);
+      daftar = `<div class="sec">Pelajaran yang dibuat (${mine.length})</div>` + (mine.map(m => `<div class="li"><span><b>${esc(m.nama)}</b><div class="m">${m.kelas.length} kelas</div></span><span class="m">${joinsOf(m.id).length} partisipan</span></div>`).join('') || '<div class="m">Belum membuat pelajaran.</div>');
+    } else {
+      const ik = D.join.filter(j => j.mhs === u.email);
+      daftar = `<div class="sec">Pelajaran yang diikuti (${ik.length})</div>` + (ik.map(j => { const m = D.mk.find(x => x.id === j.mk), k = m && m.kelas.find(x => x.id === j.kelas); return `<div class="li"><span><b>${esc(m ? m.nama : '(pelajaran dihapus)')}</b><div class="m">Pengajar: ${esc(m ? m.dosenNama || m.dosen : '—')}</div></span><span class="m">${esc(k ? k.nama : '—')}</span></div>`; }).join('') || '<div class="m">Belum bergabung ke pelajaran.</div>');
+    }
+    modal(`<div class="head">${ava(u, 'lg')}<div><h3>${esc(u.nama)}</h3>${chipRole(u.role)}</div></div>
+      <dl class="dl"><dt>Gmail</dt><dd>${esc(u.email)}</dd><dt>No. HP</dt><dd>${esc(u.hp || '—')}</dd><dt>ID</dt><dd>${esc(u.id || '—')}</dd><dt>Minat belajar</dt><dd>${esc(u.prodi || '—')}</dd>
+      <dt>Terdaftar</dt><dd>${fmtDT(u.dibuat).replace('Belum pernah', '—')}</dd><dt>Terakhir masuk</dt><dd>${fmtDT(u.last)}</dd>
+      <dt>Verifikasi Gmail</dt><dd>${u.verified == null ? '—' : u.verified ? '<span class="chip ok">Terverifikasi</span>' : '<span class="chip no">Belum</span>'}</dd><dt>UID</dt><dd style="font-size:12px;color:var(--mu)">${esc(u.uid)}</dd></dl>
+      ${daftar}<div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="dTut">Tutup</button><button class="btn red" type="button" id="dDel">${ic('trash')} Hapus akun</button></div>`, true);
+    $('#dTut').onclick = closeModal; $('#dDel').onclick = () => hapusAkun(uid);
+  }
+
+  function hapusAkun(uid) {
+    const u = D.users.find(x => x.uid === uid); if (!u) return;
+    const dampak = [];
+    if (u.role === 'Pengajar') {
+      const mine = D.mk.filter(m => m.dosen === u.email), nk = mine.reduce((a, m) => a + m.kelas.length, 0), np = new Set(mine.flatMap(m => joinsOf(m.id).map(j => j.mhs))).size;
+      dampak.push(`<b>${mine.length} pelajaran</b> dan <b>${nk} kelas</b> miliknya ikut terhapus (materi, tugas, quiz).`, `<b>${np} partisipan</b> kehilangan kelas tersebut beserta absen, tugas, nilai, dan hasil quiz mereka.`);
+    } else {
+      dampak.push(`Dikeluarkan dari <b>${D.join.filter(j => j.mhs === u.email).length} pelajaran</b>; absen, tugas, nilai, dan hasil quiz-nya ikut terhapus.`);
+    }
+    dampak.push('Akun, profil, dan foto dihapus <b>permanen</b> dan tidak bisa dipulihkan.');
+    modal(`<h3>Hapus akun ${esc(u.nama)}?</h3><p class="sub">${esc(u.email)} · ${esc(u.role)}</p><div class="warn"><b>Tindakan ini tidak bisa dibatalkan.</b><ul>${dampak.map(t => `<li>${t}</li>`).join('')}</ul></div>
+      <label class="f" style="margin-top:14px">Ketik <b>HAPUS</b> untuk melanjutkan<input id="kH" autocomplete="off"></label><p class="err" id="kErr" role="alert"></p>
+      <div class="btns"><button class="btn ghost" type="button" id="kBatal">Batal</button><button class="btn red" type="button" id="kOk">${ic('trash')} Hapus permanen</button></div>`);
+    $('#kBatal').onclick = closeModal; $('#kH').focus();
+    $('#kOk').onclick = async () => {
+      if ($('#kH').value.trim() !== 'HAPUS') { $('#kErr').textContent = 'Ketik HAPUS (huruf kapital) untuk mengonfirmasi.'; return; }
+      const b = $('#kOk'); b.disabled = true; b.textContent = 'Menghapus…';
+      try { await api('akun_hapus', { uid }); closeModal(); await muatTenang(); toast('Akun ' + u.nama + ' dihapus'); }
+      catch (x) { $('#kErr').textContent = x.message; b.disabled = false; b.innerHTML = ic('trash') + ' Hapus permanen'; }
+    };
+  }
+
+  /* ----- tab Pelajaran ----- */
+  function panePel() {
+    $('#pane').innerHTML = `<div class="panel"><div class="tb"><div class="grow"><input type="search" id="sPl" placeholder="Cari nama pelajaran atau pengajar…" value="${esc(qPel)}" aria-label="Cari pelajaran"></div></div><div id="tPl"></div></div>`;
+    $('#sPl').oninput = e => { qPel = e.target.value; tabelPel(); };
+    tabelPel();
+  }
+  function tabelPel() {
+    const q = qPel.trim().toLowerCase(), em = byEmail();
+    const rows = D.mk.filter(m => !q || [m.nama, m.kode, m.dosenNama, m.dosen].some(v => String(v || '').toLowerCase().includes(q)));
+    $('#tPl').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Pelajaran</th><th>Pengajar</th><th>Kelas</th><th>Partisipan</th><th></th></tr></thead><tbody>${rows.map(m => { const t = em[m.dosen]; return `<tr>
+      <td><b>${esc(m.nama)}</b>${m.kode ? `<span class="m">Kode: ${esc(m.kode)}</span>` : ''}</td><td>${esc(t ? t.nama : m.dosenNama || '—')}<span class="m">${esc(m.dosen)}</span></td>
+      <td>${m.kelas.length}${m.kelas.length ? `<span class="m">${esc(m.kelas.map(k => k.nama).join(', '))}</span>` : ''}</td><td>${joinsOf(m.id).length}</td>
+      <td class="act"><button class="btn ghost sm" type="button" data-ang="${esc(m.id)}">${ic('users')} Anggota</button><button class="btn red sm" type="button" data-hp="${esc(m.id)}" aria-label="Hapus pelajaran ${esc(m.nama)}">${ic('trash')} Hapus</button></td></tr>`; }).join('')}</tbody></table></div>`
+      : `<div class="empty">${D.mk.length ? 'Tidak ada pelajaran yang cocok.' : 'Belum ada pelajaran yang dibuat pengajar.'}</div>`;
+    $('#tPl').querySelectorAll('[data-ang]').forEach(b => { b.onclick = () => anggota(b.dataset.ang); });
+    $('#tPl').querySelectorAll('[data-hp]').forEach(b => { b.onclick = () => hapusPel(b.dataset.hp); });
+  }
+  function anggota(id) {
+    const m = D.mk.find(x => x.id === id); if (!m) return;
+    const em = byEmail(), js = joinsOf(id), known = new Set(m.kelas.map(k => k.id));
+    const grup = m.kelas.map(k => ({ k, rows: js.filter(j => j.kelas === k.id) }));
+    const lain = js.filter(j => !known.has(j.kelas)); if (lain.length) grup.push({ k: { nama: 'Tanpa kelas', kode: '' }, rows: lain });
+    const tbl = rows => rows.length ? `<div class="tw"><table style="min-width:520px"><thead><tr><th>Nama</th><th>Gmail</th><th>No. HP</th><th>ID</th></tr></thead><tbody>${rows.map(j => { const u = em[j.mhs]; return `<tr><td>${u ? `<div class="who" style="min-width:0">${ava(u)}<b>${esc(u.nama)}</b></div>` : '<i>(akun dihapus)</i>'}</td><td>${esc(j.mhs)}</td><td>${esc(u ? u.hp || '—' : '—')}</td><td>${esc(u ? u.id || '—' : '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="m" style="padding:4px 2px">Belum ada partisipan di kelas ini.</div>';
+    modal(`<h3>Anggota: ${esc(m.nama)}</h3><p class="sub">Pengajar: ${esc(m.dosenNama || m.dosen)} · ${js.length} partisipan di ${m.kelas.length} kelas</p>
+      ${grup.length ? grup.map(g => `<div class="kh">${esc(g.k.nama)} ${g.k.kode ? `<span class="chip s">${esc(g.k.kode)}</span>` : ''}<span class="m">${g.rows.length} partisipan</span></div>${tbl(g.rows)}`).join('') : '<div class="m">Pelajaran ini belum punya kelas.</div>'}
+      <div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="aTut">Tutup</button></div>`, true);
+    $('#aTut').onclick = closeModal;
+  }
+  function hapusPel(id) {
+    const m = D.mk.find(x => x.id === id); if (!m) return;
+    const n = joinsOf(id).length;
+    modal(`<h3>Hapus pelajaran “${esc(m.nama)}”?</h3><p class="sub">Dibuat oleh ${esc(m.dosenNama || m.dosen)}</p><div class="warn"><b>Tindakan ini tidak bisa dibatalkan.</b><ul><li><b>${m.kelas.length} kelas</b> beserta seluruh pertemuan, materi, tugas, dan quiz terhapus.</li><li><b>${n} partisipan</b> keluar dari pelajaran ini; absen, tugas, nilai, dan hasil quiz mereka ikut terhapus.</li></ul></div>
+      <label class="f" style="margin-top:14px">Ketik <b>HAPUS</b> untuk melanjutkan<input id="kH" autocomplete="off"></label><p class="err" id="kErr" role="alert"></p>
+      <div class="btns"><button class="btn ghost" type="button" id="kBatal">Batal</button><button class="btn red" type="button" id="kOk">${ic('trash')} Hapus pelajaran</button></div>`);
+    $('#kBatal').onclick = closeModal; $('#kH').focus();
+    $('#kOk').onclick = async () => {
+      if ($('#kH').value.trim() !== 'HAPUS') { $('#kErr').textContent = 'Ketik HAPUS (huruf kapital) untuk mengonfirmasi.'; return; }
+      const b = $('#kOk'); b.disabled = true; b.textContent = 'Menghapus…';
+      try { await api('pelajaran_hapus', { id }); closeModal(); await muatTenang(); toast('Pelajaran dihapus'); }
+      catch (x) { $('#kErr').textContent = x.message; b.disabled = false; b.innerHTML = ic('trash') + ' Hapus pelajaran'; }
+    };
+  }
+
+  /* ----- tab Kata motivasi ----- */
+  function paneMot() {
+    if (!D.quotes) { $('#pane').innerHTML = `<div class="panel"><div class="note"><b>Kata motivasi belum bisa dikelola.</b><br>${esc(D.quotesError || 'Tabel belum tersedia.')}</div></div>`; return; }
+    $('#pane').innerHTML = `<div class="panel"><div class="qadd"><label class="f" style="margin:0" for="qNew">Tambah kata motivasi baru</label>
+      <div class="row"><textarea id="qNew" maxlength="300" placeholder="Contoh: “Belajar hari ini, berhasil esok hari.” – Nama Tokoh"></textarea><button class="btn lime" type="button" id="qAdd">${ic('plus')} Tambah</button></div>
+      <div class="cnt"><span id="qC">0</span>/300 · Kata motivasi tampil bergantian di beranda <b>pengajar</b> dan <b>partisipan</b>, berganti tiap beberapa detik. Total: ${D.quotes.length}.</div><p class="err" id="qErr" role="alert" style="margin:0"></p></div>
+      <ul class="ql" id="qL"></ul></div>`;
+    $('#qNew').oninput = e => { $('#qC').textContent = e.target.value.length; };
+    $('#qAdd').onclick = async () => {
+      const t = $('#qNew').value.replace(/\s+/g, ' ').trim(), er = $('#qErr'); er.textContent = '';
+      if (t.length < 3) { er.textContent = 'Kata motivasi minimal 3 karakter.'; return; }
+      const b = $('#qAdd'); b.disabled = true;
+      try { await api('motivasi_tambah', { teks: t }); await muatTenang(); toast('Kata motivasi ditambahkan'); } catch (x) { er.textContent = x.message; b.disabled = false; }
+    };
+    listMot();
+  }
+  function listMot() {
+    $('#qL').innerHTML = D.quotes.length ? D.quotes.map((q, i) => `<li class="qi" data-q="${q.id}"><span class="qn">${i + 1}</span><div class="qt">${esc(q.teks)}</div><div class="qb"><button class="btn ghost sm" type="button" data-qe="${q.id}">${ic('edit')} Ubah</button><button class="btn red sm" type="button" data-qd="${q.id}" aria-label="Hapus kata motivasi nomor ${i + 1}">${ic('trash')} Hapus</button></div></li>`).join('')
+      : '<li class="empty">Belum ada kata motivasi. Beranda akan memakai kata bawaan sampai kamu menambahkannya.</li>';
+    $('#qL').querySelectorAll('[data-qe]').forEach(b => { b.onclick = () => editMot(+b.dataset.qe); });
+    $('#qL').querySelectorAll('[data-qd]').forEach(b => { b.onclick = () => hapusMot(+b.dataset.qd); });
+  }
+  function editMot(id) {
+    const q = D.quotes.find(x => x.id === id), li = $(`[data-q="${id}"]`); if (!q || !li) return;
+    li.querySelector('.qt').innerHTML = `<textarea maxlength="300" id="qEd">${esc(q.teks)}</textarea><p class="err" id="qEe" role="alert" style="margin:4px 0 0"></p>`;
+    li.querySelector('.qb').innerHTML = `<button class="btn lime sm" type="button" id="qSv">Simpan</button><button class="btn ghost sm" type="button" id="qCx">Batal</button>`;
+    const ta = $('#qEd'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    $('#qCx').onclick = listMot;
+    $('#qSv').onclick = async () => {
+      const t = ta.value.replace(/\s+/g, ' ').trim(); if (t.length < 3) { $('#qEe').textContent = 'Kata motivasi minimal 3 karakter.'; return; }
+      const b = $('#qSv'); b.disabled = true;
+      try { await api('motivasi_ubah', { id, teks: t }); await muatTenang(); toast('Kata motivasi diperbarui'); } catch (x) { $('#qEe').textContent = x.message; b.disabled = false; }
+    };
+  }
+  function hapusMot(id) {
+    const q = D.quotes.find(x => x.id === id); if (!q) return;
+    modal(`<h3>Hapus kata motivasi ini?</h3><p class="sub" style="margin-top:10px">${esc(q.teks)}</p><p class="err" id="kErr" role="alert"></p><div class="btns"><button class="btn ghost" type="button" id="kBatal">Batal</button><button class="btn red" type="button" id="kOk">${ic('trash')} Hapus</button></div>`);
+    $('#kBatal').onclick = closeModal;
+    $('#kOk').onclick = async () => { const b = $('#kOk'); b.disabled = true; try { await api('motivasi_hapus', { id }); closeModal(); await muatTenang(); toast('Kata motivasi dihapus'); } catch (x) { $('#kErr').textContent = x.message; b.disabled = false; } };
+  }
+
+  /* ---------- awal ---------- */
+  if (TOKEN) mulai(); else viewLogin('');
+})();
