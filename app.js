@@ -2808,6 +2808,15 @@ function initMobileNav() {
   logo.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); home(); } });
 }
 const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = footerHtml();
+// Penanda "sedang online": kirim detak tiap 60 detik selama tab terlihat (dibaca panel admin). Diam-diam gagal jika tabel belum dibuat.
+let _pingT = null;
+function startPing() {
+  if (_pingT) return;
+  const go = () => { if (!document.hidden) { try { sb.rpc('ping').then(() => {}, () => {}); } catch (e) {} } };
+  go(); _pingT = setInterval(go, 60000);
+  document.addEventListener('visibilitychange', go);
+}
+
 (async function boot() {
   try {
     if (/GANTI/.test(SUPABASE_URL) || /GANTI/.test(SUPABASE_ANON_KEY)) throw new Error('Konfigurasi Supabase belum diisi. Buka app.js lalu isi SUPABASE_URL dan SUPABASE_ANON_KEY.');
@@ -2817,7 +2826,7 @@ const ftEl = PAGE === 'login' ? null : $('#foot'); if (ftEl) ftEl.innerHTML = fo
       initLogin(); initScrollHint(); return;
     }
     if (!(await loadAll())) { location.replace(pageHref('login')); return; }
-    applyPref(); initMobileNav(); fixLinks();
+    applyPref(); initMobileNav(); fixLinks(); startPing();
     if (PAGE === 'beranda') {
       U = Auth.session(); isDosen = U.role === 'Pengajar';
       initBeranda();

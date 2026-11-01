@@ -1,9 +1,20 @@
 'use strict';
+/* =====================================================================
+   API Panel Admin KelasBelajar  (Vercel Serverless Function: /api/admin)
+   - Satu endpoint, semua aksi lewat POST { action, ... }.
+   - Akun admin = akun Supabase Auth yang didaftarkan SUPERADMIN lewat database (tabel "admins").
+     Tidak ada pendaftaran admin lewat website. Login diverifikasi ke Supabase, lalu server memberi
+     token bertanda tangan (berlaku 8 jam) dan tiap permintaan dicek lagi: akun masih ada di tabel admins?
+   - Akses ke Supabase memakai SUPABASE_SERVICE_ROLE_KEY yang HANYA ada di server ini.
+   Environment variable wajib: SUPABASE_SERVICE_ROLE_KEY
+   Opsional: SUPABASE_URL (bawaan: proyek yang dipakai app.js)
+   ===================================================================== */
 const crypto = require('crypto');
 
 const SB_URL = () => String(process.env.SUPABASE_URL || 'https://absfiaukhpovsrmkzbdp.supabase.co').replace(/\/+$/, '');
 const cfg = () => {
   const SRK = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  // kunci penanda tangan token diturunkan dari service role key (tidak perlu env tambahan)
   return { SRK, SECRET: SRK ? crypto.createHash('sha256').update('kb-admin|' + SRK).digest('hex') : '' };
 };
 const TTL_MS = 8 * 60 * 60 * 1000;
@@ -11,6 +22,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const enc = encodeURIComponent;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/* ---------- token & login ---------- */
 const sign = (payload, secret) => {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return body + '.' + crypto.createHmac('sha256', secret).update(body).digest('base64url');
@@ -27,6 +39,7 @@ const ipOf = req => String(((req.headers && req.headers['x-forwarded-for']) || '
 const isBlocked = ip => { const f = FAILS.get(ip); if (!f) return false; if (Date.now() > f.until) { FAILS.delete(ip); return false; } return f.n >= 8; };
 const addFail = ip => { const f = FAILS.get(ip) || { n: 0, until: 0 }; f.n++; f.until = Date.now() + 15 * 60 * 1000; FAILS.set(ip, f); };
 
+/* ---------- Supabase (service role) ---------- */
 async function sbFetch(path, { method = 'GET', body, headers = {} } = {}) {
   const k = cfg().SRK;
   const r = await fetch(SB_URL() + path, {
@@ -71,6 +84,7 @@ async function authInfo() {
   return out;
 }
 
+/* ---------- validasi (sama dengan form daftar di website) ---------- */
 const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v || '').trim());
 const MKID = /^[A-Za-z0-9_-]{1,64}$/;
 const bad = msg => { const e = new Error(msg); e.status = 400; e.user = true; return e; };
@@ -91,6 +105,25 @@ function cekAkun(b) {
   return d;
 }
 
+/* ---------- aktivitas (pengunjung & online) ---------- */
+const ONLINE_MS = 150 * 1000, H24_MS = 24 * 3600 * 1000;
+async function aksiAktif() {
+  try {
+    const rows = await restAll('aktivitas', 'select=uid,last_seen&order=uid.asc');
+    const now = Date.now(), seen = {}; let h24 = 0, online = 0;
+    rows.forEach(r => {
+      const t = Date.parse(r.last_seen); if (!t) return;
+      seen[r.uid] = r.last_seen;
+      if (now - t <= H24_MS) h24++;
+      if (now - t <= ONLINE_MS) online++;
+    });
+    return { aktif: { ada: true, h24, online, seen, now } };
+  } catch (e) {
+    return { aktif: { ada: false, error: e.status === 404 || /aktivitas|schema cache|relation/i.test(e.message) ? 'Tabel "aktivitas" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message } };
+  }
+}
+
+/* ---------- aksi ---------- */
 async function aksiData() {
   const [pr, mk, jn, au] = await Promise.all([
     restAll('profiles', 'select=uid,email,nama,role,id_user,hp,prodi,dibuat,pref&order=dibuat.asc'),
@@ -114,7 +147,8 @@ async function aksiData() {
   let quotes = null, quotesError = '';
   try { quotes = await restAll('motivasi', 'select=id,teks&order=id.asc'); }
   catch (e) { quotesError = e.status === 404 || /motivasi|schema cache|relation/i.test(e.message) ? 'Tabel "motivasi" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message; }
-  return { users, mk: pel, join, quotes, quotesError };
+  const { aktif } = await aksiAktif();
+  return { users, mk: pel, join, quotes, quotesError, aktif };
 }
 
 async function aksiBuatAkun(b) {
@@ -140,6 +174,39 @@ async function aksiBuatAkun(b) {
     await rest('profiles', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { uid, email: d.email, nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, prodi: d.prodi } });
   }
   return { ok: true, uid };
+}
+
+async function aksiUbahAkun(b) {
+  const uid = String(b.uid || '');
+  if (!UUID.test(uid)) throw bad('ID akun tidak valid.');
+  const role = String(b.role || ''), id = String(b.id || '').trim(), prodi = String(b.prodi || '').trim();
+  if (!['Partisipan', 'Pengajar'].includes(role)) throw bad('Peran harus Partisipan atau Pengajar.');
+  if (!/^[A-Za-z0-9._-]{3,30}$/.test(id)) throw bad('ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
+  if (prodi.length < 3 || prodi.length > 60) throw bad('Minat belajar wajib diisi (3–60 karakter).');
+  const prof = (await rest(`profiles?uid=eq.${enc(uid)}&select=uid,email,role,id_user&limit=1`))[0];
+  if (!prof) throw bad('Akun tidak ditemukan.');
+  if (id !== prof.id_user) {
+    const dup = await rest(`profiles?id_user=eq.${enc(id)}&uid=neq.${enc(uid)}&select=uid&limit=1`);
+    if (dup.length) throw bad('ID ini sudah dipakai akun lain.');
+  }
+  let keluar = 0;
+  if (role !== prof.role) {
+    if (prof.role === 'Pengajar') {
+      const n = (await rest(`mk?dosen=eq.${enc(prof.email)}&select=id`)).length;
+      if (n) throw bad(`Pengajar ini masih punya ${n} pelajaran. Hapus pelajarannya dulu di tab Pelajaran sebelum mengubah perannya menjadi Partisipan.`);
+    } else {
+      keluar = (await rest(`bergabung?mhs=eq.${enc(prof.email)}&select=mk_id`)).length;
+      await rest(`progres?email=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      await rest(`bergabung?mhs=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    }
+  }
+  try { await rest(`profiles?uid=eq.${enc(uid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { role, id_user: id, prodi } }); }
+  catch (e) { if (e.code === '23505') throw bad('ID ini sudah dipakai akun lain.'); throw e; }
+  try { // samakan data bawaan akun login (tidak wajib)
+    const cur = await sbFetch(`/auth/v1/admin/users/${enc(uid)}`);
+    await sbFetch(`/auth/v1/admin/users/${enc(uid)}`, { method: 'PUT', body: { user_metadata: { ...((cur && cur.user_metadata) || {}), role, id_user: id, prodi } } });
+  } catch (e) { /* abaikan */ }
+  return { ok: true, keluar };
 }
 
 async function aksiHapusAkun(b) {
@@ -183,7 +250,9 @@ async function jalankan(action, b) {
   switch (action) {
     case 'data': return aksiData();
     case 'akun_tambah': return aksiBuatAkun(b);
+    case 'akun_ubah': return aksiUbahAkun(b);
     case 'akun_hapus': return aksiHapusAkun(b);
+    case 'aktif': return aksiAktif();
     case 'pelajaran_hapus': return aksiHapusPelajaran(b);
     case 'motivasi_tambah': { const r = await rest('motivasi?select=id,teks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { teks: cekTeks(b.teks) } }); return { ok: true, item: r[0] }; }
     case 'motivasi_ubah': { const r = await rest(`motivasi?id=eq.${cekNomor(b.id)}&select=id,teks`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: { teks: cekTeks(b.teks) } }); if (!r.length) throw bad('Kata motivasi tidak ditemukan.'); return { ok: true, item: r[0] }; }

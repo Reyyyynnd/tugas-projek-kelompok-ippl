@@ -4,7 +4,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TK = 'kb-admin-token';
-  let TOKEN = '', D = null, tab = 'akun', fRole = 'all', qAkun = '', qPel = '', busy = false;
+  let TOKEN = '', D = null, aktifT = 0, tab = 'akun', fRole = 'all', qAkun = '', qPel = '', busy = false;
   try { TOKEN = sessionStorage.getItem(TK) || ''; } catch (e) {}
 
   const P = {
@@ -22,7 +22,9 @@
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     out: '<path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M16 8l4 4-4 4M20 12H9"/>',
     quote: '<path d="M5 17.5c0-4 1.5-7 5-9M13 17.5c0-4 1.5-7 5-9"/><path d="M5 17.5h4v-4H5zM13 17.5h4v-4h-4z"/>',
-    list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'
+    list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
+    pulse: '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>'
   };
   const ic = n => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
 
@@ -44,6 +46,22 @@
     if (r.status === 404 && !j.error) throw new Error('API admin tidak ditemukan. Pastikan folder api/ ikut ter-deploy di Vercel.');
     if (!r.ok) throw new Error(j.error || 'Kesalahan server (' + r.status + ').');
     return j;
+  }
+
+  /* ---------- aktivitas ---------- */
+  const seenOf = u => (D && D.aktif && D.aktif.ada && D.aktif.seen && D.aktif.seen[u.uid]) || '';
+  const isOn = u => { const t = Date.parse(seenOf(u)); return !!t && t >= D.aktif.now - 150000; };
+  const rel = iso => { const t = Date.parse(iso); if (!t) return 'Belum pernah'; const m = Math.max(0, Math.round((Date.now() - t) / 60000)); if (m < 1) return 'Baru saja'; if (m < 60) return m + ' menit lalu'; const h = Math.round(m / 60); return h < 48 ? h + ' jam lalu' : fmtD(iso); };
+  const dot = u => isOn(u) ? '<i class="dot" title="Sedang online"></i>' : '';
+  async function segarAktif() {
+    if (!TOKEN || !D) return;
+    try {
+      const j = await api('aktif'); D.aktif = j.aktif;
+      const a = $('#sv-h24'), b = $('#sv-on');
+      if (a) a.textContent = D.aktif.ada ? D.aktif.h24 : '—';
+      if (b) b.textContent = D.aktif.ada ? D.aktif.online : '—';
+      if (tab === 'akun' && $('#tAk') && !$('#mdl')) tabelAkun();
+    } catch (e) { /* diam-diam */ }
   }
 
   /* ---------- derived ---------- */
@@ -81,7 +99,7 @@
     const b = $(btn), i = $(inp); if (!b || !i) return;
     b.onclick = () => { const show = i.type === 'password'; i.type = show ? 'text' : 'password'; b.innerHTML = ic(show ? 'eyeoff' : 'eye'); b.setAttribute('aria-label', show ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'); };
   }
-  function keluar(msg) { TOKEN = ''; D = null; try { sessionStorage.removeItem(TK); } catch (e) {} viewLogin(msg); }
+  function keluar(msg) { clearInterval(aktifT); TOKEN = ''; D = null; try { sessionStorage.removeItem(TK); } catch (e) {} viewLogin(msg); }
 
   /* ---------- dashboard ---------- */
   async function mulai() {
@@ -91,6 +109,7 @@
     $('#bOut').onclick = () => keluar('');
     $('#bRef').onclick = () => muat(true);
     await muat(false);
+    clearInterval(aktifT); aktifT = setInterval(segarAktif, 30000);
   }
   async function muat(notif) {
     if (busy) return; busy = true;
@@ -99,16 +118,18 @@
     finally { busy = false; }
   }
 
-  function stat(i, v, l) { return `<div class="st"><span class="si">${ic(i)}</span><div><div class="sv">${v}</div><div class="sl">${l}</div></div></div>`; }
+  function stat(i, v, l, id, act) { return `<${act ? 'button type="button" data-st="' + act + '"' : 'div'} class="st${act ? ' click' : ''}"><span class="si">${ic(i)}</span><span><span class="sv"${id ? ` id="${id}"` : ''}>${v}</span><span class="sl">${l}</span></span></${act ? 'button' : 'div'}>`; }
   function render() {
     if (!D || !$('#wrap')) return;
     const nT = D.users.filter(u => u.role === 'Pengajar').length, nS = D.users.filter(u => u.role === 'Partisipan').length;
-    const nK = D.mk.reduce((a, m) => a + m.kelas.length, 0);
+    const A = D.aktif || { ada: false };
     $('#wrap').innerHTML = `<h2>Ringkasan</h2><p class="lead">Kelola akun, pelajaran, dan kata motivasi KelasBelajar.</p>
-      <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.mk.length, 'Total pelajaran')}${stat('grid', nK, 'Total kelas')}</div>
+      <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.mk.length, 'Total pelajaran')}${stat('trend', A.ada ? A.h24 : '—', 'Pengunjung 24 jam', 'sv-h24', 'h24')}${stat('pulse', A.ada ? A.online : '—', 'Sedang online', 'sv-on', 'on')}</div>
+      ${A.ada ? '' : `<div class="note" style="margin:-8px 0 18px"><b>Data pengunjung belum aktif.</b> ${esc(A.error || 'Tabel belum tersedia.')}</div>`}
       <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="akun" class="${tab === 'akun' ? 'on' : ''}">${ic('users')} Akun</button><button type="button" role="tab" data-tab="pel" class="${tab === 'pel' ? 'on' : ''}">${ic('book')} Pelajaran</button><button type="button" role="tab" data-tab="mot" class="${tab === 'mot' ? 'on' : ''}">${ic('quote')} Kata motivasi</button></div>
       <div id="pane"></div>`;
     $('#wrap').querySelectorAll('[data-tab]').forEach(b => { b.onclick = () => { tab = b.dataset.tab; render(); }; });
+    $('#wrap').querySelectorAll('[data-st]').forEach(b => { b.onclick = () => daftarAktif(b.dataset.st); });
     ({ akun: paneAkun, pel: panePel, mot: paneMot })[tab]();
   }
 
@@ -127,11 +148,12 @@
     const q = qAkun.trim().toLowerCase();
     const rows = D.users.filter(u => (fRole === 'all' || u.role === fRole) && (!q || [u.nama, u.email, u.hp, u.id, u.prodi].some(v => String(v || '').toLowerCase().includes(q))));
     $('#tAk').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Nama</th><th>Peran</th><th>Gmail</th><th>No. HP</th><th>Minat belajar</th><th>Pelajaran</th><th>Terdaftar</th><th></th></tr></thead><tbody>${rows.map(u => `<tr>
-      <td><div class="who">${ava(u)}<div><b>${esc(u.nama)}</b><span class="m">ID: ${esc(u.id || '—')}</span></div></div></td><td>${chipRole(u.role)}</td><td>${esc(u.email)}</td><td>${esc(u.hp || '—')}</td><td>${esc(u.prodi || '—')}</td>
+      <td><div class="who">${ava(u)}<div><b>${esc(u.nama)}</b>${dot(u)}<span class="m">ID: ${esc(u.id || '—')}</span></div></div></td><td>${chipRole(u.role)}</td><td>${esc(u.email)}</td><td>${esc(u.hp || '—')}</td><td>${esc(u.prodi || '—')}</td>
       <td>${nPelajaranUser(u)}<span class="m">${u.role === 'Pengajar' ? 'dibuat' : 'diikuti'}</span></td><td style="white-space:nowrap">${fmtD(u.dibuat)}</td>
-      <td class="act"><button class="btn ghost sm" type="button" data-det="${esc(u.uid)}">${ic('eye')} Detail</button><button class="btn red sm" type="button" data-del="${esc(u.uid)}" aria-label="Hapus akun ${esc(u.nama)}">${ic('trash')} Hapus</button></td></tr>`).join('')}</tbody></table></div>`
+      <td class="act"><button class="btn ghost sm" type="button" data-det="${esc(u.uid)}">${ic('eye')} Detail</button><button class="btn ghost sm" type="button" data-edt="${esc(u.uid)}">${ic('edit')} Ubah</button><button class="btn red sm" type="button" data-del="${esc(u.uid)}" aria-label="Hapus akun ${esc(u.nama)}" title="Hapus akun">${ic('trash')}</button></td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${D.users.length ? 'Tidak ada akun yang cocok dengan pencarian.' : 'Belum ada akun.'}</div>`;
     $('#tAk').querySelectorAll('[data-det]').forEach(b => { b.onclick = () => detailAkun(b.dataset.det); });
+    $('#tAk').querySelectorAll('[data-edt]').forEach(b => { b.onclick = () => formUbah(b.dataset.edt); });
     $('#tAk').querySelectorAll('[data-del]').forEach(b => { b.onclick = () => hapusAkun(b.dataset.del); });
   }
 
@@ -184,10 +206,52 @@
     }
     modal(`<div class="head">${ava(u, 'lg')}<div><h3>${esc(u.nama)}</h3>${chipRole(u.role)}</div></div>
       <dl class="dl"><dt>Gmail</dt><dd>${esc(u.email)}</dd><dt>No. HP</dt><dd>${esc(u.hp || '—')}</dd><dt>ID</dt><dd>${esc(u.id || '—')}</dd><dt>Minat belajar</dt><dd>${esc(u.prodi || '—')}</dd>
-      <dt>Terdaftar</dt><dd>${fmtDT(u.dibuat).replace('Belum pernah', '—')}</dd><dt>Terakhir masuk</dt><dd>${fmtDT(u.last)}</dd>
+      <dt>Terdaftar</dt><dd>${fmtDT(u.dibuat).replace('Belum pernah', '—')}</dd><dt>Terakhir masuk</dt><dd>${fmtDT(u.last)}</dd><dt>Aktivitas</dt><dd>${!D.aktif || !D.aktif.ada ? '—' : isOn(u) ? '<span class="chip ok">Sedang online</span>' : esc(seenOf(u) ? 'Terakhir aktif ' + rel(seenOf(u)) : 'Belum tercatat')}</dd>
       <dt>Verifikasi Gmail</dt><dd>${u.verified == null ? '—' : u.verified ? '<span class="chip ok">Terverifikasi</span>' : '<span class="chip no">Belum</span>'}</dd><dt>UID</dt><dd style="font-size:12px;color:var(--mu)">${esc(u.uid)}</dd></dl>
-      ${daftar}<div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="dTut">Tutup</button><button class="btn red" type="button" id="dDel">${ic('trash')} Hapus akun</button></div>`, true);
-    $('#dTut').onclick = closeModal; $('#dDel').onclick = () => hapusAkun(uid);
+      ${daftar}<div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="dTut">Tutup</button><button class="btn lime" type="button" id="dEdt">${ic('edit')} Ubah</button><button class="btn red" type="button" id="dDel">${ic('trash')} Hapus akun</button></div>`, true);
+    $('#dTut').onclick = closeModal; $('#dDel').onclick = () => hapusAkun(uid); $('#dEdt').onclick = () => formUbah(uid);
+  }
+
+  function formUbah(uid) {
+    const u = D.users.find(x => x.uid === uid); if (!u) return;
+    const mine = D.mk.filter(m => m.dosen === u.email).length, ikut = D.join.filter(j => j.mhs === u.email).length;
+    modal(`<h3>Ubah akun</h3><p class="sub">${esc(u.nama)} · ${esc(u.email)}</p>
+      <form id="fUb" novalidate><fieldset class="roles"><legend>Peran</legend><label><input type="radio" name="role" value="Partisipan"${u.role === 'Partisipan' ? ' checked' : ''}> Partisipan</label><label><input type="radio" name="role" value="Pengajar"${u.role === 'Pengajar' ? ' checked' : ''}> Pengajar</label></fieldset>
+      <div class="fg"><label class="f">ID<input id="uId" maxlength="30" value="${esc(u.id || '')}" autocomplete="off" required></label>
+      <label class="f">Minat belajar<input id="uProdi" maxlength="60" value="${esc(u.prodi || '')}" autocomplete="off" required></label></div>
+      <div class="warn" id="uWarn" hidden></div><p class="err" id="uErr" role="alert"></p>
+      <div class="btns"><button class="btn ghost" type="button" id="uBatal">Batal</button><button class="btn lime" type="submit" id="uGo">Simpan perubahan</button></div></form>`);
+    $('#uBatal').onclick = closeModal;
+    const roleNow = () => $('#fUb input[name=role]:checked').value;
+    const info = () => {
+      const w = $('#uWarn'), r = roleNow(); w.hidden = true; w.innerHTML = '';
+      if (r === u.role) return;
+      w.hidden = false;
+      w.innerHTML = u.role === 'Pengajar'
+        ? (mine ? `<b>Belum bisa disimpan.</b> Pengajar ini masih punya <b>${mine} pelajaran</b>. Hapus dulu pelajarannya di tab Pelajaran.` : 'Peran berubah dari <b>Pengajar</b> menjadi <b>Partisipan</b>.')
+        : `Peran berubah dari <b>Partisipan</b> menjadi <b>Pengajar</b>.${ikut ? ` Keanggotaan di <b>${ikut} pelajaran</b> beserta absen, tugas, dan nilainya akan <b>dihapus</b>.` : ''}`;
+    };
+    $('#fUb').querySelectorAll('input[name=role]').forEach(i => { i.onchange = info; });
+    $('#fUb').onsubmit = async e => {
+      e.preventDefault();
+      const err = $('#uErr'), go = $('#uGo'); err.textContent = '';
+      const d = { uid, role: roleNow(), id: $('#uId').value.trim(), prodi: $('#uProdi').value.trim() };
+      if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return void (err.textContent = 'ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
+      if (d.prodi.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
+      go.disabled = true; go.textContent = 'Menyimpan…';
+      try { await api('akun_ubah', d); closeModal(); await muatTenang(); toast('Akun ' + u.nama + ' diperbarui'); }
+      catch (x) { err.textContent = x.message; go.disabled = false; go.textContent = 'Simpan perubahan'; }
+    };
+  }
+
+  function daftarAktif(mode) {
+    const A = D.aktif; if (!A || !A.ada) { toast('Data pengunjung belum aktif. Jalankan SQL aktivitas.', true); return; }
+    const batas = mode === 'on' ? A.now - 150000 : A.now - 86400000;
+    const rows = D.users.filter(u => { const t = Date.parse(seenOf(u)); return t && t >= batas; }).sort((a, b) => Date.parse(seenOf(b)) - Date.parse(seenOf(a)));
+    modal(`<h3>${mode === 'on' ? 'Sedang online' : 'Pengunjung 24 jam terakhir'}</h3><p class="sub">${rows.length} akun ${mode === 'on' ? 'aktif dalam 2,5 menit terakhir' : 'pernah membuka website dalam 24 jam terakhir'}. Tamu yang belum login tidak terhitung.</p>
+      ${rows.length ? rows.map(u => `<div class="li"><span class="who" style="min-width:0">${ava(u)}<span><b>${esc(u.nama)}</b>${dot(u)}<div class="m">${esc(u.email)}</div></span></span><span style="text-align:right">${chipRole(u.role)}<div class="m">${esc(rel(seenOf(u)))}</div></span></div>`).join('') : '<div class="empty">Belum ada.</div>'}
+      <div class="btns" style="margin-top:14px"><button class="btn ghost" type="button" id="oTut">Tutup</button></div>`, true);
+    $('#oTut').onclick = closeModal;
   }
 
   function hapusAkun(uid) {
