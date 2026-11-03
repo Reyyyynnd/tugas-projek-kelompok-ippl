@@ -40,6 +40,10 @@
     {
       "source": "/register",
       "destination": "/login.html"
+    },
+    {
+      "source": "/notifikasi",
+      "destination": "/index.html"
     }
   ],
   "headers": [

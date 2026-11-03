@@ -107,7 +107,11 @@ function cekAkun(b) {
 
 /* ---------- aktivitas (pengunjung & online) ---------- */
 const ONLINE_MS = 150 * 1000, H24_MS = 24 * 3600 * 1000;
+async function notifBelum() {
+  try { return (await rest('notifikasi?untuk_admin=eq.true&dibaca=eq.false&select=id&limit=100')).length; } catch (e) { return null; }
+}
 async function aksiAktif() {
+  const nb = await notifBelum();
   try {
     const rows = await restAll('aktivitas', 'select=uid,last_seen&order=uid.asc');
     const now = Date.now(), seen = {}; let h24 = 0, online = 0;
@@ -117,9 +121,9 @@ async function aksiAktif() {
       if (now - t <= H24_MS) h24++;
       if (now - t <= ONLINE_MS) online++;
     });
-    return { aktif: { ada: true, h24, online, seen, now } };
+    return { aktif: { ada: true, h24, online, seen, now }, notifBelum: nb };
   } catch (e) {
-    return { aktif: { ada: false, error: e.status === 404 || /aktivitas|schema cache|relation/i.test(e.message) ? 'Tabel "aktivitas" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message } };
+    return { notifBelum: nb, aktif: { ada: false, error: e.status === 404 || /aktivitas|schema cache|relation/i.test(e.message) ? 'Tabel "aktivitas" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message } };
   }
 }
 
@@ -147,8 +151,8 @@ async function aksiData() {
   let quotes = null, quotesError = '';
   try { quotes = await restAll('motivasi', 'select=id,teks&order=id.asc'); }
   catch (e) { quotesError = e.status === 404 || /motivasi|schema cache|relation/i.test(e.message) ? 'Tabel "motivasi" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message; }
-  const { aktif } = await aksiAktif();
-  return { users, mk: pel, join, quotes, quotesError, aktif };
+  const { aktif, notifBelum: nb } = await aksiAktif();
+  return { users, mk: pel, join, quotes, quotesError, aktif, notifBelum: nb };
 }
 
 async function aksiBuatAkun(b) {
@@ -209,6 +213,27 @@ async function aksiUbahAkun(b) {
   return { ok: true, keluar };
 }
 
+async function kabarkanHapusMk(ids, alasan) {
+  try {
+    if (!ids.length) return;
+    const mks = await rest(`mk?id=${enc(inList(ids))}&select=id,dosen,data`);
+    const rows = [];
+    const emails = new Set(mks.map(m => String(m.dosen || '').toLowerCase()));
+    const joins = await rest(`bergabung?mk_id=${enc(inList(ids))}&select=mk_id,mhs`);
+    joins.forEach(j => emails.add(String(j.mhs || '').toLowerCase()));
+    if (!emails.size) return;
+    const prof = await rest(`profiles?email=${enc(inList([...emails]))}&select=uid,email`);
+    const uidOf = {}; prof.forEach(p => { uidOf[String(p.email).toLowerCase()] = p.uid; });
+    mks.forEach(m => {
+      const nama = (m.data && m.data.nama) || 'Pelajaran';
+      const dos = uidOf[String(m.dosen || '').toLowerCase()];
+      if (dos) rows.push({ untuk: dos, jenis: 'pelajaran', judul: 'Pelajaran dihapus oleh admin', isi: `${nama} dihapus oleh admin${alasan ? ' (' + alasan + ')' : ''}.`, tautan: 'pelajaran' });
+      joins.filter(j => j.mk_id === m.id).forEach(j => { const u = uidOf[String(j.mhs || '').toLowerCase()]; if (u) rows.push({ untuk: u, jenis: 'pelajaran', judul: 'Pelajaran dihapus oleh admin', isi: `${nama} dihapus oleh admin${alasan ? ' (' + alasan + ')' : ''}.`, tautan: 'pelajaran' }); });
+    });
+    if (rows.length) await rest('notifikasi', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: rows });
+  } catch (e) { /* notifikasi bersifat tambahan */ }
+}
+
 async function aksiHapusAkun(b) {
   const uid = String(b.uid || '');
   if (!UUID.test(uid)) throw bad('ID akun tidak valid.');
@@ -218,6 +243,7 @@ async function aksiHapusAkun(b) {
     if (prof.role === 'Pengajar') {
       const ids = (await rest(`mk?dosen=eq.${enc(prof.email)}&select=id`)).map(m => m.id);
       pelajaran = ids.length;
+      if (ids.length) await kabarkanHapusMk(ids, 'akun pengajar dihapus');
       if (ids.length) { await delIn('progres', 'mk_id', ids); await delIn('bergabung', 'mk_id', ids); await delIn('mk', 'id', ids); }
     }
     await rest(`progres?email=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
@@ -233,9 +259,32 @@ async function aksiHapusAkun(b) {
 async function aksiHapusPelajaran(b) {
   const id = String(b.id || '');
   if (!MKID.test(id)) throw bad('ID pelajaran tidak valid.');
+  await kabarkanHapusMk([id], '');
   await delIn('progres', 'mk_id', [id]);
   await delIn('bergabung', 'mk_id', [id]);
   await delIn('mk', 'id', [id]);
+  return { ok: true };
+}
+
+async function aksiNotifList(b) {
+  const lama = b.urut === 'lama', hanya = b.hanyaBelum === true;
+  try {
+    const rows = await rest(`notifikasi?untuk_admin=eq.true${hanya ? '&dibaca=eq.false' : ''}&select=id,jenis,judul,isi,dibaca,dibuat&order=dibuat.${lama ? 'asc' : 'desc'},id.${lama ? 'asc' : 'desc'}&limit=500`);
+    const belum = hanya ? rows.length : rows.filter(r => !r.dibaca).length;
+    return { ada: true, items: rows, belum: await notifBelum() ?? belum };
+  } catch (e) {
+    if (e.status === 404 || /notifikasi|schema cache|relation/i.test(e.message)) return { ada: false, items: [], belum: 0, error: 'Tabel "notifikasi" belum dibuat. Jalankan file supabase-notifikasi.sql di Supabase SQL Editor.' };
+    throw e;
+  }
+}
+async function aksiNotifBaca(b) {
+  const q = b.semua ? 'notifikasi?untuk_admin=eq.true&dibaca=eq.false' : `notifikasi?untuk_admin=eq.true&id=eq.${cekNomor(b.id)}`;
+  await rest(q, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { dibaca: true } });
+  return { ok: true };
+}
+async function aksiNotifHapus(b) {
+  const q = b.dibaca ? 'notifikasi?untuk_admin=eq.true&dibaca=eq.true' : `notifikasi?untuk_admin=eq.true&id=eq.${cekNomor(b.id)}`;
+  await rest(q, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   return { ok: true };
 }
 
@@ -244,7 +293,7 @@ const cekTeks = v => {
   if (t.length < 3 || t.length > 300) throw bad('Kata motivasi harus 3–300 karakter.');
   return t;
 };
-const cekNomor = v => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw bad('ID motivasi tidak valid.'); return n; };
+const cekNomor = v => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw bad('ID tidak valid.'); return n; };
 
 async function jalankan(action, b) {
   switch (action) {
@@ -253,6 +302,9 @@ async function jalankan(action, b) {
     case 'akun_ubah': return aksiUbahAkun(b);
     case 'akun_hapus': return aksiHapusAkun(b);
     case 'aktif': return aksiAktif();
+    case 'notif_list': return aksiNotifList(b);
+    case 'notif_baca': return aksiNotifBaca(b);
+    case 'notif_hapus': return aksiNotifHapus(b);
     case 'pelajaran_hapus': return aksiHapusPelajaran(b);
     case 'motivasi_tambah': { const r = await rest('motivasi?select=id,teks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: { teks: cekTeks(b.teks) } }); return { ok: true, item: r[0] }; }
     case 'motivasi_ubah': { const r = await rest(`motivasi?id=eq.${cekNomor(b.id)}&select=id,teks`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: { teks: cekTeks(b.teks) } }); if (!r.length) throw bad('Kata motivasi tidak ditemukan.'); return { ok: true, item: r[0] }; }

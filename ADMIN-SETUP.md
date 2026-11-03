@@ -34,3 +34,25 @@ update auth.users set encrypted_password = extensions.crypt('SandiBaru123', exte
 
 - Salah login 8 kali → dikunci 15 menit. Sesi admin 8 jam.
 - Akun admin tidak punya profil pengajar/partisipan, jadi tidak bisa dipakai masuk di halaman login biasa.
+
+
+## Sistem Notifikasi (pengguna & admin)
+Jalankan `supabase-notifikasi.sql` di Supabase SQL Editor (sekali; aman diulang). File ini membuat tabel `notifikasi`
+dan trigger otomatis, jadi notifikasi muncul meski aksinya dilakukan dari halaman mana pun.
+Halaman pengguna: menu **Notifikasi** (+ lonceng di bilah atas) dengan urutan Terbaru/Terlama, filter, tandai dibaca, dan hapus.
+Panel admin: tab **Notifikasi**.
+
+| Kejadian | Penerima |
+|---|---|
+| Daftar akun, verifikasi Gmail | pengguna ("selamat datang", "Gmail terverifikasi"), admin |
+| Ganti kata sandi, Gmail, No. HP, nama, ID, minat belajar, foto, pengaturan | pengguna itu sendiri (Gmail juga ke admin) |
+| Admin mengubah peran/ID/minat belajar | pengguna yang bersangkutan |
+| Bergabung / keluar / dikeluarkan dari kelas | partisipan, pengajar kelas, admin |
+| Partisipan absen, kirim tugas, kerjakan quiz | partisipan (konfirmasi) + pengajar |
+| Pengajar menilai tugas/quiz, mengembalikan tugas, mencatat kehadiran, menandai selesai | partisipan bersangkutan (+ catatan untuk pengajar) |
+| Pengajar menambah materi / tugas / quiz / membuka absen | semua partisipan di kelas itu |
+| Pelajaran / kelas dibuat atau dihapus | pengajar, admin (anggota kelas diberi tahu saat pelajaran dihapus) |
+| Akun dihapus | admin |
+
+Catatan: notifikasi hanya tercatat untuk kejadian SETELAH SQL dijalankan. Notifikasi lebih dari 90 hari dibersihkan otomatis.
+Jangan upload `supabase-*.sql` ke GitHub/Vercel (tidak dibutuhkan website).

@@ -48,7 +48,8 @@
       home: '<path d="M3.5 11L12 4l8.5 7M6 9.5V20h12V9.5M10 20v-6h4v6"/>',
       sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
       user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c.8-4 3.8-6 7.5-6s6.7 2 7.5 6"/>',
-      undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>'
+      undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+      phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'
     };
     const MAP = {
       '✅': 'check', '🎉': 'spark', '✨': 'spark', '📝': 'note', '📄': 'file', '⚠': 'warn',
@@ -60,7 +61,7 @@
       '🌇': 'sunrise', '☀': 'sun', '🌙': 'moon', '💡': 'bulb', '🧑\u200d🏫': 'cap',
       '👩\u200d🏫': 'cap', '🚪': 'exit', '🧠': 'quiz', '📌': 'pin', '🏆': 'trophy', '💪': 'zap',
       '⚡': 'zap', '🚀': 'rocket', '⭐': 'star', '😉': 'smile', '👋': 'smile', '🏠': 'home',
-      '⚙': 'sliders', '👤': 'user'
+      '⚙': 'sliders', '👤': 'user', '📱': 'phone'
     };
     const keys = Object.keys(MAP).sort((a, b) => b.length - a.length);
     const src = '(?:' + keys.join('|') + ')\\uFE0F?';
@@ -135,6 +136,7 @@ const CACHE = { lms_users: [], lms_mk: [], lms_join: [], lms_prog: {} };
 const SNAP = { mk: {}, join: {}, prog: {} };
 const PCOLS = ['att', 'sub', 'quiz', 'qt', 'nilai', 'kembali', 'qext'];
 let SESS = null, WSEQ = 0, PENDING = 0, Q = Promise.resolve(), REFRESHING = false;
+let NOTIF = [], NOTIF_OK = false;   // notifikasi milik pengguna yang sedang login
 
 const J = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, key) => (o[key] = x[key], o), {}) : x);
 
@@ -142,7 +144,7 @@ function enqueue(fn) {
   PENDING++;
   Q = Q.then(fn)
     .catch(e => { console.error(e); toast('Gagal menyimpan ke server: ' + ((e && e.message) || e)); setTimeout(refresh, 600); })
-    .then(() => { PENDING--; });
+    .then(() => { PENDING--; if (PENDING === 0) setTimeout(() => { try { segarNotif(true); } catch (e) {} }, 900); });
 }
 
 const mkRows = list => {
@@ -220,9 +222,10 @@ async function loadAll(soft) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return false;
   const au = session.user, w0 = WSEQ;
-  const [pr, mk, jn, pg, mv] = await Promise.all([
+  const [pr, mk, jn, pg, mv, nt] = await Promise.all([
     fetchAll('profiles', ['uid']), fetchAll('mk', ['id']), fetchAll('bergabung', ['mk_id', 'mhs']), fetchAll('progres', ['mk_id', 'email']),
-    sb.from('motivasi').select('teks').order('id').then(r => r, () => null)
+    sb.from('motivasi').select('teks').order('id').then(r => r, () => null),
+    sb.from('notifikasi').select('id,jenis,judul,isi,tautan,dibaca,dibuat').order('dibuat', { ascending: false }).limit(300).then(r => r, () => null)
   ]);
   if (soft && WSEQ !== w0) return 'stale';
   const users = pr.map(r => ({
@@ -233,6 +236,7 @@ async function loadAll(soft) {
   if (!me) { await sb.auth.signOut({ scope: 'local' }); return false; }
   // Kata motivasi di beranda dikelola admin (tabel "motivasi"); kalau tabel belum ada/kosong, pakai kata bawaan
   if (mv && Array.isArray(mv.data)) { const qs = mv.data.map(r => String(r.teks || '').trim()).filter(Boolean); if (qs.length) QUOTES = qs; }
+  if (nt && Array.isArray(nt.data)) { NOTIF = nt.data; NOTIF_OK = true; }
   CACHE.lms_users = users;
   CACHE.lms_mk = mk.map(r => ({ ...r.data, id: r.id, dosen: r.dosen }));
   CACHE.lms_join = jn.map(r => ({ mhs: r.mhs, mkId: r.mk_id, kelasId: r.kelas_id, at: Number(r.waktu) }));
@@ -248,7 +252,7 @@ async function refresh() {
   if (REFRESHING || PENDING > 0 || PAGE !== 'beranda' || !SESS) return;
   REFRESHING = true;
   try {
-    const sig = () => J([CACHE.lms_mk, CACHE.lms_join, CACHE.lms_prog, CACHE.lms_users.map(u => [u.uid, u.email, u.pref, u.verified])]);
+    const sig = () => J([CACHE.lms_mk, CACHE.lms_join, CACHE.lms_prog, CACHE.lms_users.map(u => [u.uid, u.email, u.pref, u.verified]), NOTIF.map(n => [n.id, n.dibaca])]);
     const before = sig();
     if (await loadAll(true) !== true) return;
     U = Auth.session() || U; isDosen = !!U && U.role === 'Pengajar';
@@ -2131,7 +2135,8 @@ function tourSteps() {
     d ? { v: 'courses', h: 'Setelah kelas berhasil dibuat', p: 'Buka kelas dan tekan info selengkapnya lalu atur pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Tambah pertemuan</b>: jika di dalam pertemuan ada materi, tugas, atau quiz maka centang opsinya dan berikan maksimal 5 file atau link', '<b>Pengumpulan</b>: file yang sudah dikumpulkan oleh partisipan dapat dilihat langsung tanpa mengunduhnya dan pengajar bisa memberikan nilai, catatan, atau mengembalikan file yang sudah dikumpulkan partisipan jika terdapat kesalahan', '<b>Absensi</b>: status kehadiran partisipan bisa diubah kapan saja'] }
       : { v: 'courses', h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen</b>: tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu', '<b>Materi</b>: lihat materi yang dibuat dosenmu tanpa mengunduh atau bisa diunduh', '<b>Tugas</b>: tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas dan jika dosen mengembalikan tugasmu perbaiki tugasnya dan kirim ulang tugas tersebut', '<b>Quiz</b>: quiz berupa link atau file, jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan', '<span class="tr-red">Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.</span>'] },
     { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran' },
-    { v: 'settings', t: N(4), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja' },
+    { v: 'notif', t: N(4), h: 'Notifikasi', p: d ? 'Semua kejadian penting muncul di sini: partisipan yang bergabung, tugas dan quiz yang masuk, absen, serta perubahan akunmu. Bisa diurutkan dari yang terbaru atau terlama.' : 'Semua kejadian penting muncul di sini: berhasil bergabung, tugas, quiz, absen, nilai dari pengajar, serta perubahan akunmu. Bisa diurutkan dari yang terbaru atau terlama.' },
+    { v: 'settings', t: N(5), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja' },
     { v: 'home', t: '.meTop', h: 'Profil', p: 'Tekan namamu di pojok atas ini untuk membuka halaman profil untuk mengubah kontak dan mengatur keamanan akunmu' },
     { t: '.foot .fcontact', sc: 'center', h: 'Butuh bantuan?', p: `Hubungi kami lewat Email atau WhatsApp di sini jika ada kendala atau saran. Selamat ${d ? 'mengajar' : 'belajar'} ✨` }
   ];
@@ -2219,16 +2224,110 @@ function endTour() {
   const pad = $('#trPad'); if (pad) pad.remove();
   if (U && !prefOf(U).tour) { U.pref = { ...prefOf(U), tour: true }; Auth.update(U.email, { pref: U.pref }); }
   const v0 = TOUR.v0; TOUR.v0 = null;
-  if (['home', 'courses', 'progress', 'settings', 'jadwal'].includes(v0) && S.view !== v0) go(v0);
+  if (['home', 'courses', 'progress', 'notif', 'settings', 'jadwal'].includes(v0) && S.view !== v0) go(v0);
   window.scrollTo(0, 0);
   const pv = TOUR.prev; TOUR.prev = null;
   if (pv && pv !== document.body && document.contains(pv) && pv.focus) pv.focus({ preventScroll: true });
 }
 
+// ===== NOTIFIKASI =====
+const N_IC = { gabung: '🎒', tugas: '📝', quiz: '🧠', absen: '✅', nilai: '🏆', kembali: '↩', akun: '👤', gmail: '✉', sandi: '🔒', hp: '📱', profil: '👤', verifikasi: '✅', pengaturan: '⚙', pelajaran: '📚', kelas: '📚', pertemuan: '📅', materi: '📖', sistem: '🔔' };
+const N_GRUP = {
+  semua: ['Semua', null],
+  belum: ['Belum dibaca', null],
+  pelajaran: ['Pelajaran', ['gabung', 'pelajaran', 'kelas', 'pertemuan', 'materi']],
+  tugas: ['Tugas & quiz', ['tugas', 'quiz', 'nilai', 'kembali', 'absen']],
+  akun: ['Akun', ['akun', 'gmail', 'sandi', 'hp', 'profil', 'verifikasi', 'pengaturan']]
+};
+const notifBelum = () => NOTIF.filter(n => !n.dibaca).length;
+function updateNotifBadge() {
+  const n = notifBelum(), tx = n > 99 ? '99+' : String(n);
+  document.querySelectorAll('[data-nbadge]').forEach(el => { el.textContent = tx; el.hidden = !n; });
+  document.querySelectorAll('.bellTop').forEach(b => b.setAttribute('aria-label', n ? 'Notifikasi, ' + n + ' belum dibaca' : 'Notifikasi'));
+}
+const relT = ts => {
+  const t = Date.parse(ts); if (!t) return '';
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (m < 1) return 'Baru saja'; if (m < 60) return m + ' menit lalu';
+  const h = Math.round(m / 60); if (h < 24) return h + ' jam lalu';
+  const d = Math.round(h / 24); return d < 7 ? d + ' hari lalu' : fmtDt(t);
+};
+function notifList() {
+  const g = S.nFilter || 'semua', asc = S.nUrut === 'lama', jenis = (N_GRUP[g] || [])[1];
+  const L = NOTIF.filter(n => g === 'belum' ? !n.dibaca : !jenis || jenis.includes(n.jenis));
+  return L.sort((a, b) => (asc ? 1 : -1) * ((Date.parse(a.dibuat) - Date.parse(b.dibuat)) || (a.id - b.id)));
+}
+function notifPage() {
+  const L = notifList(), belum = notifBelum(), g = S.nFilter || 'semua', urut = S.nUrut === 'lama' ? 'lama' : 'baru';
+  const row = n => `<div class="nt-item${n.dibaca ? '' : ' unread'}" role="button" tabindex="0" onclick="notifBuka(${n.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();notifBuka(${n.id})}">
+      <span class="nt-ic">${N_IC[n.jenis] || '🔔'}</span>
+      <div class="nt-bd"><div class="nt-t">${esc(n.judul)}</div>${n.isi ? `<div class="nt-s">${esc(n.isi)}</div>` : ''}<div class="nt-w" title="${esc(fmtDt(Date.parse(n.dibuat)))}">${esc(relT(n.dibuat))}</div></div>
+      <button type="button" class="nt-x" onclick="event.stopPropagation();notifHapus(${n.id})" aria-label="Hapus notifikasi" title="Hapus">✕</button></div>`;
+  const kosong = !NOTIF_OK ? empty('🔔', 'Notifikasi belum aktif', 'Tabel notifikasi belum dibuat di database. Hubungi admin.') : NOTIF.length ? empty('🔔', 'Tidak ada notifikasi di filter ini', 'Coba pilih filter lain.') : empty('🔔', 'Belum ada notifikasi', 'Aktivitas penting seperti bergabung ke kelas, mengirim tugas, absen, dan perubahan akun akan muncul di sini.');
+  return `<div class="nt-head"><div><h2>Notifikasi</h2><p class="quote">${belum ? `<b>${belum}</b> belum dibaca` : 'Semua sudah dibaca'} · ${NOTIF.length} notifikasi</p></div>
+    <div class="nt-act"><button class="btn lime" type="button" onclick="notifBacaSemua()"${belum ? '' : ' disabled'}>✅ Tandai semua dibaca</button><button class="btn" type="button" onclick="notifHapusDibaca()"${NOTIF.some(n => n.dibaca) ? '' : ' disabled'}>🗑 Hapus yang sudah dibaca</button></div></div>
+    <div class="card nt-bar"><div class="nt-seg" role="group" aria-label="Urutan notifikasi"><button type="button" class="${urut === 'baru' ? 'on' : ''}" aria-pressed="${urut === 'baru'}" onclick="notifUrut('baru')">Terbaru</button><button type="button" class="${urut === 'lama' ? 'on' : ''}" aria-pressed="${urut === 'lama'}" onclick="notifUrut('lama')">Terlama</button></div>
+    <div class="nt-chips" role="group" aria-label="Filter notifikasi">${Object.keys(N_GRUP).map(k => `<button type="button" class="${g === k ? 'on' : ''}" aria-pressed="${g === k}" onclick="notifFilter('${k}')">${N_GRUP[k][0]}${k === 'belum' && belum ? ' (' + belum + ')' : ''}</button>`).join('')}</div></div>
+    <div class="nt-list">${L.length ? L.map(row).join('') : kosong}</div>`;
+}
+function notifUrut(v) { S.nUrut = v; render(); }
+function notifFilter(f) { S.nFilter = f; render(); }
+function notifGo(t) {
+  const [k, a, b] = String(t || '').split(':');
+  if (!k) { render(); return; }
+  if ((k === 'mk' || k === 'item') && a && myMk().some(m => m.id === a)) {
+    if (k === 'item' && Number(b) > 0) { bukaItem(a, Number(b)); return; }
+    S.view = 'course'; S.cid = a; render(); window.scrollTo(0, 0); return;
+  }
+  if (k === 'profil') { location.href = pageHref('profil'); return; }
+  if (k === 'pengaturan') { go('settings'); return; }
+  go('courses');
+}
+function notifBuka(id) {
+  const n = NOTIF.find(x => x.id === id); if (!n) return;
+  if (!n.dibaca) { n.dibaca = true; updateNotifBadge(); sb.rpc('notif_baca', { p_id: id }).then(() => {}, () => {}); }
+  notifGo(n.tautan);
+}
+function notifBacaSemua() {
+  NOTIF.forEach(n => { n.dibaca = true; }); updateNotifBadge(); render();
+  sb.rpc('notif_baca_semua').then(r => { if (r && r.error) toast('Gagal menyimpan: ' + r.error.message); }, () => {});
+}
+function notifHapus(id) {
+  NOTIF = NOTIF.filter(n => n.id !== id); updateNotifBadge(); render();
+  sb.rpc('notif_hapus', { p_id: id }).then(r => { if (r && r.error) toast('Gagal menghapus: ' + r.error.message); }, () => {});
+}
+function notifHapusDibaca() {
+  if (!NOTIF.some(n => n.dibaca)) return;
+  if (!confirm('Hapus semua notifikasi yang sudah dibaca?')) return;
+  NOTIF = NOTIF.filter(n => !n.dibaca); updateNotifBadge(); render();
+  sb.rpc('notif_hapus_dibaca').then(r => { if (r && r.error) toast('Gagal menghapus: ' + r.error.message); }, () => {});
+}
+async function segarNotif(diam) {
+  if (!SESS || document.hidden) return;
+  try {
+    const { data, error } = await sb.from('notifikasi').select('id,jenis,judul,isi,tautan,dibaca,dibuat').order('dibuat', { ascending: false }).limit(300);
+    if (error || !Array.isArray(data)) return;
+    const sg = L => L.map(n => n.id + (n.dibaca ? 'r' : 'u')).join(',');
+    const ubah = sg(data) !== sg(NOTIF), maxLama = NOTIF.reduce((a, n) => Math.max(a, n.id), 0), baru = data.filter(n => !n.dibaca && n.id > maxLama);
+    NOTIF = data; NOTIF_OK = true; updateNotifBadge();
+    if (!diam && NOTIF_OK && maxLama > 0 && baru.length && PAGE === 'beranda' && !(typeof TOUR !== 'undefined' && TOUR.on)) toast('🔔 ' + baru[0].judul + (baru.length > 1 ? ' (+' + (baru.length - 1) + ' lainnya)' : ''));
+    if (ubah && PAGE === 'beranda' && S.view === 'notif' && !$('#layer').innerHTML) { const ae = document.activeElement; if (!(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) render(); }
+  } catch (e) { /* diam-diam */ }
+}
+let _ntT = null;
+function startNotif() {
+  if (_ntT) return;
+  updateNotifBadge();
+  _ntT = setInterval(() => segarNotif(false), 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) segarNotif(false); });
+  document.querySelectorAll('.bellTop').forEach(a => a.addEventListener('click', e => { if (PAGE === 'beranda') { e.preventDefault(); go('notif'); } }));
+}
+
 function renderNav() {
-  const it = [['home', '🏠', 'Beranda'], ['courses', '📚', 'Pelajaran'], ['progress', '📈', 'Progres'], ['settings', '⚙️', 'Pengaturan'], ['profil', '👤', 'Profil']];
+  const it = [['home', '🏠', 'Beranda'], ['courses', '📚', 'Pelajaran'], ['progress', '📈', 'Progres'], ['notif', '🔔', 'Notifikasi'], ['settings', '⚙️', 'Pengaturan'], ['profil', '👤', 'Profil']];
   const inCourses = ['courses', 'course', 'kelas', 'pert', 'jadwal'].includes(S.view);
-  $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" title="${l}" onclick="go('${v}')"><span class="ni">${i}</span><span class="nl">${l}</span></button>`).join('');
+  $('#nav').innerHTML = it.map(([v, i, l]) => `<button class="${(S.view === v || (inCourses && v === 'courses')) ? 'on' : ''}" title="${l}" onclick="go('${v}')"><span class="ni">${i}${v === 'notif' ? '<b class="nbadge" data-nbadge hidden></b>' : ''}</span><span class="nl">${l}</span></button>`).join('');
+  updateNotifBadge();
 }
 const slugify = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 function slugMap(list, label, extra) {
@@ -2246,7 +2345,7 @@ const klSlugs = m => slugMap(m.kelas, k => k.nama, k => k.kode);
 const SX_TABS = ['tampilan', 'pengingat', 'akun', 'bantuan'], PT_TABS = ['pertemuan', 'pengumpulan', 'absensi'];
 function routeOf() {
   const v = S.view;
-  if (v === 'home') return '/beranda'; if (v === 'courses') return '/pelajaran'; if (v === 'progress') return '/progres'; if (v === 'jadwal') return '/jadwal';
+  if (v === 'home') return '/beranda'; if (v === 'courses') return '/pelajaran'; if (v === 'progress') return '/progres'; if (v === 'jadwal') return '/jadwal'; if (v === 'notif') return '/notifikasi';
   if (v === 'settings') { const t = SX_TABS.includes(S.sxTab) ? S.sxTab : 'tampilan'; return t === 'tampilan' ? '/pengaturan' : '/pengaturan/' + t; }
   const m = myMk().find(x => x.id === S.cid); if (!m) return '/pelajaran';
   let r = '/pelajaran/' + mkSlugs()[m.id]; if (v === 'course') return r;
@@ -2268,6 +2367,7 @@ function applyRoute(path) {
   }
   if (first === 'progres' || first === 'progress') return set('progress');
   if (first === 'jadwal') return set('jadwal');
+  if (first === 'notifikasi') return set('notif');
   if (first === 'pengaturan' || first === 'settings') { set('settings'); S.sxTab = SX_TABS.includes(seg[1]) ? seg[1] : 'tampilan'; return; }
   set('home');
 }
@@ -2275,7 +2375,7 @@ const curRoute = () => (HIST ? location.pathname : (location.hash.slice(1).start
 let ROUTE_REPLACE = true;
 function syncUrl() {
   const r = routeOf(), v = S.view, m = myMk().find(x => x.id === S.cid);
-  const T = { home: 'Beranda', courses: 'Pelajaran', progress: 'Progres', jadwal: 'Jadwal', settings: 'Pengaturan' };
+  const T = { home: 'Beranda', courses: 'Pelajaran', progress: 'Progres', jadwal: 'Jadwal', notif: 'Notifikasi', settings: 'Pengaturan' };
   document.title = (T[v] || (m ? m.nama : 'Pelajaran')) + ' · KelasBelajar';
   const ganti = ROUTE_REPLACE; ROUTE_REPLACE = false;
   if (curRoute() === r) return;
@@ -2294,7 +2394,7 @@ function render() {
   hidePcTip();
   renderNav();
   const v = S.view;
-  $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : v === 'jadwal' ? jadwalPage() : settings();
+  $('#view').innerHTML = v === 'home' ? home() : v === 'courses' ? coursesPage() : v === 'course' ? coursePage() : v === 'kelas' ? kelasPage() : v === 'pert' ? pertPage() : v === 'progress' ? progress() : v === 'jadwal' ? jadwalPage() : v === 'notif' ? notifPage() : settings();
   $('#view').classList.toggle('is-home', v === 'home'); topInfo(); document.body.classList.toggle('me-off', v === 'settings'); if (v === 'home') fx(); if (v === 'progress' || v === 'settings') prgFx();
   if (v === 'settings') { sxInd(); requestAnimationFrame(sxInd); }
   syncUrl();
@@ -2826,7 +2926,7 @@ function startPing() {
       initLogin(); initScrollHint(); return;
     }
     if (!(await loadAll())) { location.replace(pageHref('login')); return; }
-    applyPref(); initMobileNav(); fixLinks(); startPing();
+    applyPref(); initMobileNav(); fixLinks(); startPing(); startNotif();
     if (PAGE === 'beranda') {
       U = Auth.session(); isDosen = U.role === 'Pengajar';
       initBeranda();

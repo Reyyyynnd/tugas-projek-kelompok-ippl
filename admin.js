@@ -4,7 +4,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TK = 'kb-admin-token';
-  let TOKEN = '', D = null, aktifT = 0, tab = 'akun', fRole = 'all', qAkun = '', qPel = '', busy = false;
+  let TOKEN = '', D = null, aktifT = 0, nUrut = 'baru', nHanyaBelum = false, N = null, tab = 'akun', fRole = 'all', qAkun = '', qPel = '', busy = false;
   try { TOKEN = sessionStorage.getItem(TK) || ''; } catch (e) {}
 
   const P = {
@@ -57,11 +57,21 @@
     if (!TOKEN || !D) return;
     try {
       const j = await api('aktif'); D.aktif = j.aktif;
+      const lama = D.notifBelum; D.notifBelum = j.notifBelum;
+      setBadgeNotif();
+      if (lama != null && j.notifBelum != null && j.notifBelum > lama) toast('Notifikasi baru masuk');
+      if (tab === 'not' && !$('#mdl') && (lama == null || j.notifBelum !== lama)) muatNotif();
       const a = $('#sv-h24'), b = $('#sv-on');
       if (a) a.textContent = D.aktif.ada ? D.aktif.h24 : '—';
       if (b) b.textContent = D.aktif.ada ? D.aktif.online : '—';
       if (tab === 'akun' && $('#tAk') && !$('#mdl')) tabelAkun();
     } catch (e) { /* diam-diam */ }
+  }
+
+  const NJ = { akun_baru: 'users', akun_hapus: 'trash', akun: 'users', gabung: 'pack', pelajaran: 'book', sistem: 'pulse' };
+  function setBadgeNotif() {
+    const b = $('#nbAdm'); if (!b) return;
+    const n = D && D.notifBelum; b.textContent = n > 99 ? '99+' : String(n || 0); b.hidden = !n;
   }
 
   /* ---------- derived ---------- */
@@ -126,11 +136,12 @@
     $('#wrap').innerHTML = `<h2>Ringkasan</h2><p class="lead">Kelola akun, pelajaran, dan kata motivasi KelasBelajar.</p>
       <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.mk.length, 'Total pelajaran')}${stat('trend', A.ada ? A.h24 : '—', 'Pengunjung 24 jam', 'sv-h24', 'h24')}${stat('pulse', A.ada ? A.online : '—', 'Sedang online', 'sv-on', 'on')}</div>
       ${A.ada ? '' : `<div class="note" style="margin:-8px 0 18px"><b>Data pengunjung belum aktif.</b> ${esc(A.error || 'Tabel belum tersedia.')}</div>`}
-      <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="akun" class="${tab === 'akun' ? 'on' : ''}">${ic('users')} Akun</button><button type="button" role="tab" data-tab="pel" class="${tab === 'pel' ? 'on' : ''}">${ic('book')} Pelajaran</button><button type="button" role="tab" data-tab="mot" class="${tab === 'mot' ? 'on' : ''}">${ic('quote')} Kata motivasi</button></div>
+      <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="akun" class="${tab === 'akun' ? 'on' : ''}">${ic('users')} Akun</button><button type="button" role="tab" data-tab="pel" class="${tab === 'pel' ? 'on' : ''}">${ic('book')} Pelajaran</button><button type="button" role="tab" data-tab="mot" class="${tab === 'mot' ? 'on' : ''}">${ic('quote')} Kata motivasi</button><button type="button" role="tab" data-tab="not" class="${tab === 'not' ? 'on' : ''}">${ic('pulse')} Notifikasi<span class="tbb" id="nbAdm" hidden></span></button></div>
       <div id="pane"></div>`;
     $('#wrap').querySelectorAll('[data-tab]').forEach(b => { b.onclick = () => { tab = b.dataset.tab; render(); }; });
     $('#wrap').querySelectorAll('[data-st]').forEach(b => { b.onclick = () => daftarAktif(b.dataset.st); });
-    ({ akun: paneAkun, pel: panePel, mot: paneMot })[tab]();
+    ({ akun: paneAkun, pel: panePel, mot: paneMot, not: paneNotif })[tab]();
+    setBadgeNotif();
   }
 
   /* ----- tab Akun ----- */
@@ -317,6 +328,31 @@
       try { await api('pelajaran_hapus', { id }); closeModal(); await muatTenang(); toast('Pelajaran dihapus'); }
       catch (x) { $('#kErr').textContent = x.message; b.disabled = false; b.innerHTML = ic('trash') + ' Hapus pelajaran'; }
     };
+  }
+
+  /* ----- tab Notifikasi ----- */
+  const relW = iso => { const t = Date.parse(iso); if (!t) return ''; const m = Math.max(0, Math.round((Date.now() - t) / 60000)); if (m < 1) return 'Baru saja'; if (m < 60) return m + ' menit lalu'; const h = Math.round(m / 60); if (h < 24) return h + ' jam lalu'; const d = Math.round(h / 24); return d < 7 ? d + ' hari lalu' : fmtDT(iso); };
+  function paneNotif() {
+    $('#pane').innerHTML = `<div class="panel"><div class="tb"><div class="seg" role="group" aria-label="Urutan"><button type="button" data-nu="baru" class="${nUrut === 'baru' ? 'on' : ''}">Terbaru</button><button type="button" data-nu="lama" class="${nUrut === 'lama' ? 'on' : ''}">Terlama</button></div>
+      <select id="nFil" aria-label="Filter"><option value="semua">Semua</option><option value="belum">Belum dibaca</option></select><span class="grow"></span>
+      <button class="btn ghost sm" type="button" id="nAll">Tandai semua dibaca</button><button class="btn ghost sm" type="button" id="nDel">Hapus yang sudah dibaca</button></div><div id="nList"><div class="loading">Memuat notifikasi…</div></div></div>`;
+    $('#nFil').value = nHanyaBelum ? 'belum' : 'semua';
+    $('#pane').querySelectorAll('[data-nu]').forEach(b => { b.onclick = () => { nUrut = b.dataset.nu; paneNotif(); }; });
+    $('#nFil').onchange = e => { nHanyaBelum = e.target.value === 'belum'; muatNotif(); };
+    $('#nAll').onclick = async () => { try { await api('notif_baca', { semua: true }); await muatNotif(); toast('Semua notifikasi ditandai dibaca'); } catch (x) { toast(x.message, true); } };
+    $('#nDel').onclick = async () => { try { await api('notif_hapus', { dibaca: true }); await muatNotif(); toast('Notifikasi yang sudah dibaca dihapus'); } catch (x) { toast(x.message, true); } };
+    muatNotif();
+  }
+  async function muatNotif() {
+    if (tab !== 'not' || !$('#nList')) return;
+    try { N = await api('notif_list', { urut: nUrut, hanyaBelum: nHanyaBelum }); } catch (e) { if ($('#nList')) $('#nList').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+    if (D) { D.notifBelum = N.belum; setBadgeNotif(); }
+    const L = $('#nList'); if (!L) return;
+    if (!N.ada) { L.innerHTML = `<div class="note"><b>Notifikasi belum aktif.</b><br>${esc(N.error || '')}</div>`; return; }
+    L.innerHTML = N.items.length ? `<ul class="ql">${N.items.map(n => `<li class="qi nt${n.dibaca ? '' : ' unread'}" data-n="${n.id}"><span class="qn">${ic(NJ[n.jenis] || 'pulse')}</span><div class="qt"><b>${esc(n.judul)}</b>${n.isi ? `<div class="m">${esc(n.isi)}</div>` : ''}<div class="m" title="${esc(fmtDT(n.dibuat))}">${esc(relW(n.dibuat))}</div></div><div class="qb">${n.dibaca ? '' : `<button class="btn ghost sm" type="button" data-nb="${n.id}">Tandai dibaca</button>`}<button class="btn red sm" type="button" data-nx="${n.id}" aria-label="Hapus notifikasi" title="Hapus">${ic('trash')}</button></div></li>`).join('')}</ul>`
+      : `<div class="empty">${nHanyaBelum ? 'Tidak ada notifikasi yang belum dibaca.' : 'Belum ada notifikasi.'}</div>`;
+    L.querySelectorAll('[data-nb]').forEach(b => { b.onclick = async () => { try { await api('notif_baca', { id: +b.dataset.nb }); await muatNotif(); } catch (x) { toast(x.message, true); } }; });
+    L.querySelectorAll('[data-nx]').forEach(b => { b.onclick = async () => { try { await api('notif_hapus', { id: +b.dataset.nx }); await muatNotif(); } catch (x) { toast(x.message, true); } }; });
   }
 
   /* ----- tab Kata motivasi ----- */
