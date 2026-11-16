@@ -127,13 +127,13 @@
   } catch (e) { console.warn('Saran desktop gagal dimuat', e); }
 })();
 
-const SUPABASE_URL = 'https://absfiaukhpovsrmkzbdp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFic2ZpYXVraHBvdnNybWt6YmRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MzIwODMsImV4cCI6MjEwNzQwODA4M30.gDlLl6LiBJQQOoJllD6Frp4f4zf9UVAHxJSqqreEX5A';
+const SUPABASE_URL = 'https://fwegzvgibstytjothqsb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZWd6dmdpYnN0eXRqb3RocXNiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ3Njg5MTYsImV4cCI6MjExMDM0NDkxNn0.nQ7XCLqF1zxFOVJXSd__u39-lrbKTIDcMfk0fbqaiVc';
 const BUCKET = 'lampiran';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const CACHE = { lms_users: [], lms_mk: [], lms_join: [], lms_prog: {} };
-const SNAP = { mk: {}, join: {}, prog: {} };
+const CACHE = { lms_users: [], lms_pelajaran: [], lms_join: [], lms_prog: {} };
+const SNAP = { pelajaran: {}, join: {}, prog: {} };
 const PCOLS = ['att', 'sub', 'quiz', 'qt', 'nilai', 'kembali', 'qext'];
 let SESS = null, WSEQ = 0, PENDING = 0, Q = Promise.resolve(), REFRESHING = false;
 let NOTIF = [], NOTIF_OK = false;   // notifikasi milik pengguna yang sedang login
@@ -147,61 +147,61 @@ function enqueue(fn) {
     .then(() => { PENDING--; if (PENDING === 0) setTimeout(() => { try { segarNotif(true); } catch (e) {} }, 900); });
 }
 
-const mkRows = list => {
+const pelajaranRows = list => {
   const o = {};
-  list.forEach(m => { const { id, dosen, ...data } = m; o[id] = { id, dosen, data, s: dosen + '|' + J(data) }; });
+  list.forEach(m => { const { id, pengajar, ...data } = m; o[id] = { id, pengajar, data, s: pengajar + '|' + J(data) }; });
   return o;
 };
-const mkSnap = rows => { const o = {}; Object.keys(rows).forEach(id => { o[id] = rows[id].s; }); return o; };
-const joinKeys = list => { const o = {}; list.forEach(j => { o[j.mkId + '|' + j.mhs] = { mk_id: j.mkId, mhs: j.mhs }; }); return o; };
+const pelajaranSnap = rows => { const o = {}; Object.keys(rows).forEach(id => { o[id] = rows[id].s; }); return o; };
+const joinKeys = list => { const o = {}; list.forEach(j => { o[j.pelajaranId + '|' + j.partisipan] = { pelajaran_id: j.pelajaranId, partisipan: j.partisipan }; }); return o; };
 const progRows = obj => {
   const o = {};
-  Object.keys(obj).forEach(mk => Object.keys(obj[mk]).forEach(em => {
-    const x = obj[mk][em] || {}, cols = {}, s = {};
+  Object.keys(obj).forEach(pelajaran => Object.keys(obj[pelajaran]).forEach(em => {
+    const x = obj[pelajaran][em] || {}, cols = {}, s = {};
     PCOLS.forEach(c => { cols[c] = x[c] || {}; s[c] = J(cols[c]); });
-    o[mk + '|' + em] = { mk_id: mk, email: em, cols, s };
+    o[pelajaran + '|' + em] = { pelajaran_id: pelajaran, email: em, cols, s };
   }));
   return o;
 };
-const progSnap = rows => { const o = {}; Object.keys(rows).forEach(k => { o[k] = { mk_id: rows[k].mk_id, email: rows[k].email, s: rows[k].s }; }); return o; };
+const progSnap = rows => { const o = {}; Object.keys(rows).forEach(k => { o[k] = { pelajaran_id: rows[k].pelajaran_id, email: rows[k].email, s: rows[k].s }; }); return o; };
 
-function syncMk(list) {
-  const now = mkRows(list), ups = [], dels = [];
-  Object.keys(now).forEach(id => { if (SNAP.mk[id] !== now[id].s) ups.push({ id, dosen: now[id].dosen, data: now[id].data }); });
-  Object.keys(SNAP.mk).forEach(id => { if (!now[id]) dels.push(id); });
-  SNAP.mk = mkSnap(now);
-  if (ups.length) enqueue(async () => { const { error } = await sb.from('mk').upsert(ups); if (error) throw error; });
-  if (dels.length) enqueue(async () => { const { error } = await sb.from('mk').delete().in('id', dels); if (error) throw error; });
+function syncPelajaran(list) {
+  const now = pelajaranRows(list), ups = [], dels = [];
+  Object.keys(now).forEach(id => { if (SNAP.pelajaran[id] !== now[id].s) ups.push({ id, pengajar: now[id].pengajar, data: now[id].data }); });
+  Object.keys(SNAP.pelajaran).forEach(id => { if (!now[id]) dels.push(id); });
+  SNAP.pelajaran = pelajaranSnap(now);
+  if (ups.length) enqueue(async () => { const { error } = await sb.from('pelajaran').upsert(ups); if (error) throw error; });
+  if (dels.length) enqueue(async () => { const { error } = await sb.from('pelajaran').delete().in('id', dels); if (error) throw error; });
 }
 
 function syncJoin(list) {
   const now = joinKeys(list), by = {};
-  Object.keys(SNAP.join).forEach(k => { if (!now[k]) { const r = SNAP.join[k]; (by[r.mk_id] = by[r.mk_id] || []).push(r.mhs); } });
+  Object.keys(SNAP.join).forEach(k => { if (!now[k]) { const r = SNAP.join[k]; (by[r.pelajaran_id] = by[r.pelajaran_id] || []).push(r.partisipan); } });
   SNAP.join = now;
-  Object.keys(by).forEach(mk => enqueue(async () => { const { error } = await sb.from('bergabung').delete().eq('mk_id', mk).in('mhs', by[mk]); if (error) throw error; }));
+  Object.keys(by).forEach(pelajaran => enqueue(async () => { const { error } = await sb.from('bergabung').delete().eq('pelajaran_id', pelajaran).in('partisipan', by[pelajaran]); if (error) throw error; }));
 }
 function syncProg(obj) {
   const now = progRows(obj), ins = [], upd = [], dels = {};
   Object.keys(now).forEach(k => {
     const n = now[k], o = SNAP.prog[k];
-    if (!o) { ins.push({ mk_id: n.mk_id, email: n.email, ...n.cols }); return; }
+    if (!o) { ins.push({ pelajaran_id: n.pelajaran_id, email: n.email, ...n.cols }); return; }
     const ch = PCOLS.filter(c => o.s[c] !== n.s[c]);
-    if (ch.length) { const row = { mk_id: n.mk_id, email: n.email }; ch.forEach(c => { row[c] = n.cols[c]; }); upd.push({ key: ch.join(','), row }); }
+    if (ch.length) { const row = { pelajaran_id: n.pelajaran_id, email: n.email }; ch.forEach(c => { row[c] = n.cols[c]; }); upd.push({ key: ch.join(','), row }); }
   });
-  Object.keys(SNAP.prog).forEach(k => { if (!now[k]) { const r = SNAP.prog[k]; (dels[r.mk_id] = dels[r.mk_id] || []).push(r.email); } });
+  Object.keys(SNAP.prog).forEach(k => { if (!now[k]) { const r = SNAP.prog[k]; (dels[r.pelajaran_id] = dels[r.pelajaran_id] || []).push(r.email); } });
   SNAP.prog = progSnap(now);
-  const up = async rows => { const { error } = await sb.from('progres').upsert(rows, { onConflict: 'mk_id,email' }); if (error) throw error; };
+  const up = async rows => { const { error } = await sb.from('progres').upsert(rows, { onConflict: 'pelajaran_id,email' }); if (error) throw error; };
   if (ins.length) enqueue(() => up(ins));
   const groups = {}; upd.forEach(u => { (groups[u.key] = groups[u.key] || []).push(u.row); });
   Object.keys(groups).forEach(g => enqueue(() => up(groups[g])));
-  Object.keys(dels).forEach(mk => enqueue(async () => { const { error } = await sb.from('progres').delete().eq('mk_id', mk).in('email', dels[mk]); if (error) throw error; }));
+  Object.keys(dels).forEach(pelajaran => enqueue(async () => { const { error } = await sb.from('progres').delete().eq('pelajaran_id', pelajaran).in('email', dels[pelajaran]); if (error) throw error; }));
 }
 
 const DB = {
   get(k, d) { const v = CACHE[k]; return v == null ? d : JSON.parse(JSON.stringify(v)); },
   set(k, v) {
     CACHE[k] = v; WSEQ++;
-    if (k === 'lms_mk') syncMk(v); else if (k === 'lms_join') syncJoin(v); else if (k === 'lms_prog') syncProg(v);
+    if (k === 'lms_pelajaran') syncPelajaran(v); else if (k === 'lms_join') syncJoin(v); else if (k === 'lms_prog') syncProg(v);
     return true;
   }
 };
@@ -222,14 +222,14 @@ async function loadAll(soft) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return false;
   const au = session.user, w0 = WSEQ;
-  const [pr, mk, jn, pg, mv, nt] = await Promise.all([
-    fetchAll('profiles', ['uid']), fetchAll('mk', ['id']), fetchAll('bergabung', ['mk_id', 'mhs']), fetchAll('progres', ['mk_id', 'email']),
+  const [pr, pelajaran, jn, pg, mv, nt] = await Promise.all([
+    fetchAll('profiles', ['uid']), fetchAll('pelajaran', ['id']), fetchAll('bergabung', ['pelajaran_id', 'partisipan']), fetchAll('progres', ['pelajaran_id', 'email']),
     sb.from('motivasi').select('teks').order('id').then(r => r, () => null),
     sb.from('notifikasi').select('id,jenis,judul,isi,tautan,dibaca,dibuat').order('dibuat', { ascending: false }).limit(300).then(r => r, () => null)
   ]);
   if (soft && WSEQ !== w0) return 'stale';
   const users = pr.map(r => ({
-    uid: r.uid, email: r.email, nama: r.nama, role: r.role, id: r.id_user, hp: r.hp, prodi: r.prodi, pref: r.pref || {},
+    uid: r.uid, email: r.email, nama: r.nama, role: r.role, id: r.id_user, hp: r.hp, minat: r.minat, pref: r.pref || {},
     dibuat: Date.parse(r.dibuat) || null, verified: r.uid === au.id ? !!au.email_confirmed_at : true
   }));
   const me = users.find(u => u.uid === au.id);
@@ -238,13 +238,13 @@ async function loadAll(soft) {
   if (mv && Array.isArray(mv.data)) { const qs = mv.data.map(r => String(r.teks || '').trim()).filter(Boolean); if (qs.length) QUOTES = qs; }
   if (nt && Array.isArray(nt.data)) { NOTIF = nt.data; NOTIF_OK = true; }
   CACHE.lms_users = users;
-  CACHE.lms_mk = mk.map(r => ({ ...r.data, id: r.id, dosen: r.dosen }));
-  CACHE.lms_join = jn.map(r => ({ mhs: r.mhs, mkId: r.mk_id, kelasId: r.kelas_id, at: Number(r.waktu) }));
+  CACHE.lms_pelajaran = pelajaran.map(r => ({ ...r.data, id: r.id, pengajar: r.pengajar }));
+  CACHE.lms_join = jn.map(r => ({ partisipan: r.partisipan, pelajaranId: r.pelajaran_id, kelasId: r.kelas_id, at: Number(r.waktu) }));
   const prog = {};
-  pg.forEach(r => { (prog[r.mk_id] = prog[r.mk_id] || {})[r.email] = { att: r.att, sub: r.sub, quiz: r.quiz, qt: r.qt, nilai: r.nilai, kembali: r.kembali, qext: r.qext }; });
+  pg.forEach(r => { (prog[r.pelajaran_id] = prog[r.pelajaran_id] || {})[r.email] = { att: r.att, sub: r.sub, quiz: r.quiz, qt: r.qt, nilai: r.nilai, kembali: r.kembali, qext: r.qext }; });
   CACHE.lms_prog = prog;
   SESS = me.email;
-  SNAP.mk = mkSnap(mkRows(CACHE.lms_mk)); SNAP.join = joinKeys(CACHE.lms_join); SNAP.prog = progSnap(progRows(CACHE.lms_prog));
+  SNAP.pelajaran = pelajaranSnap(pelajaranRows(CACHE.lms_pelajaran)); SNAP.join = joinKeys(CACHE.lms_join); SNAP.prog = progSnap(progRows(CACHE.lms_prog));
   return true;
 }
 async function reloadData() { await Q; return loadAll(); }
@@ -252,10 +252,10 @@ async function refresh() {
   if (REFRESHING || PENDING > 0 || PAGE !== 'beranda' || !SESS) return;
   REFRESHING = true;
   try {
-    const sig = () => J([CACHE.lms_mk, CACHE.lms_join, CACHE.lms_prog, CACHE.lms_users.map(u => [u.uid, u.email, u.pref, u.verified]), NOTIF.map(n => [n.id, n.dibaca])]);
+    const sig = () => J([CACHE.lms_pelajaran, CACHE.lms_join, CACHE.lms_prog, CACHE.lms_users.map(u => [u.uid, u.email, u.pref, u.verified]), NOTIF.map(n => [n.id, n.dibaca])]);
     const before = sig();
     if (await loadAll(true) !== true) return;
-    U = Auth.session() || U; isDosen = !!U && U.role === 'Pengajar';
+    U = Auth.session() || U; isPengajar = !!U && U.role === 'Pengajar';
     const ae = document.activeElement, typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
     if (sig() !== before && !$('#layer').innerHTML && S.view !== 'pert' && !typing) render();
   } catch (e) { console.warn('Segarkan data gagal', e); }
@@ -309,9 +309,9 @@ function fotoSet(u, url) {
   const pref = { ...(u.pref || {}) }; if (url) pref.foto = url; else delete pref.foto;
   Auth.update(u.email, { pref });
   if (u.role === 'Pengajar') {
-    const all = DB.get('lms_mk', []); let ch = false;
-    all.forEach(m => { if (m.dosen === u.email && (m.dosenFoto || '') !== url) { if (url) m.dosenFoto = url; else delete m.dosenFoto; ch = true; } });
-    if (ch) DB.set('lms_mk', all);
+    const all = DB.get('lms_pelajaran', []); let ch = false;
+    all.forEach(m => { if (m.pengajar === u.email && (m.pengajarFoto || '') !== url) { if (url) m.pengajarFoto = url; else delete m.pengajarFoto; ch = true; } });
+    if (ch) DB.set('lms_pelajaran', all);
   }
 }
 
@@ -352,26 +352,26 @@ const $=s=>document.querySelector(s);
 const TOTAL = 16, MAXP = 50;
 const totalOf = k => Math.min(MAXP, Math.max(1, Math.floor(+(k && k.total)) || TOTAL));
 const cekTotal = v => { const t = Number(v); return Number.isInteger(t) && t >= 1 && t <= MAXP ? t : 0; };
-let U = null, isDosen = false;
+let U = null, isPengajar = false;
 const S = { view: 'home', cid: null, kid: null, open: {}, edit: null, draft: {}, pf: null, pfKey: null };
 
 const st = {
-  mk: () => DB.get('lms_mk', []), setMk: l => DB.set('lms_mk', l),
+  pelajaran: () => DB.get('lms_pelajaran', []), setPelajaran: l => DB.set('lms_pelajaran', l),
   jn: () => DB.get('lms_join', []), setJn: l => DB.set('lms_join', l),
   pr: () => DB.get('lms_prog', {}), setPr: p => DB.set('lms_prog', p)
 };
-const getMk = id => st.mk().find(m => m.id === id);
+const getPelajaran = id => st.pelajaran().find(m => m.id === id);
 const getKelas = (m, kid) => m && m.kelas.find(k => k.id === kid);
-const saveMk = m => { const l = st.mk(), i = l.findIndex(x => x.id === m.id); if (i < 0) l.push(m); else l[i] = m; return st.setMk(l); };
+const savePelajaran = m => { const l = st.pelajaran(), i = l.findIndex(x => x.id === m.id); if (i < 0) l.push(m); else l[i] = m; return st.setPelajaran(l); };
 const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-function P(mkId, em) { const x = (st.pr()[mkId] || {})[em] || {}; return { att: x.att || {}, sub: x.sub || {}, quiz: x.quiz || {}, qt: x.qt || {}, nilai: x.nilai || {}, kembali: x.kembali || {}, qext: x.qext || {} }; }
-function setP(mkId, em, v) { const a = st.pr(); (a[mkId] = a[mkId] || {})[em] = v; return st.setPr(a); }
-const studentsOf = (mkId, kelasId) => st.jn().filter(j => j.mkId === mkId && (!kelasId || j.kelasId === kelasId)).map(j => Auth.find(j.mhs)).filter(Boolean);
-const myMk = () => isDosen ? st.mk().filter(m => m.dosen === U.email)
-  : st.jn().filter(j => j.mhs === U.email).map(j => getMk(j.mkId)).filter(Boolean);
-const kelasOf = (m, em) => { const j = st.jn().find(q => q.mhs === em && q.mkId === m.id); return j ? getKelas(m, j.kelasId) : null; };
+function P(pelajaranId, em) { const x = (st.pr()[pelajaranId] || {})[em] || {}; return { att: x.att || {}, sub: x.sub || {}, quiz: x.quiz || {}, qt: x.qt || {}, nilai: x.nilai || {}, kembali: x.kembali || {}, qext: x.qext || {} }; }
+function setP(pelajaranId, em, v) { const a = st.pr(); (a[pelajaranId] = a[pelajaranId] || {})[em] = v; return st.setPr(a); }
+const studentsOf = (pelajaranId, kelasId) => st.jn().filter(j => j.pelajaranId === pelajaranId && (!kelasId || j.kelasId === kelasId)).map(j => Auth.find(j.partisipan)).filter(Boolean);
+const myPelajaran = () => isPengajar ? st.pelajaran().filter(m => m.pengajar === U.email)
+  : st.jn().filter(j => j.partisipan === U.email).map(j => getPelajaran(j.pelajaranId)).filter(Boolean);
+const kelasOf = (m, em) => { const j = st.jn().find(q => q.partisipan === em && q.pelajaranId === m.id); return j ? getKelas(m, j.kelasId) : null; };
 const pertOf = (m, em) => { const k = kelasOf(m, em); return k ? k.pert : []; };
-const pertAt = (mkId, n, kid) => { const m = getMk(mkId); if (!m) return null; const k = kid ? getKelas(m, kid) : kelasOf(m, U.email); return k ? k.pert.find(x => x.n === n) : null; };
+const pertAt = (pelajaranId, n, kid) => { const m = getPelajaran(pelajaranId); if (!m) return null; const k = kid ? getKelas(m, kid) : kelasOf(m, U.email); return k ? k.pert.find(x => x.n === n) : null; };
 const totalPert = m => m.kelas.reduce((a, k) => a + k.pert.length, 0);
 const subName = v => typeof v === 'string' ? v : v.nama;
 const subAt = v => v && typeof v === 'object' ? v.at : null;
@@ -386,11 +386,11 @@ const quizDone = (p, x) => (!x.quiz.length || p.quiz[x.n] != null) && (!qlOf(x).
 const MAX_LAMP = 5, MAX_TOTAL = 3 * 1048576;
 const sizeTxt = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
 function bukaLink(url) { if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer'); else toast('Link tidak valid'); }
-const dkey = (mkId, n, t) => mkId + '-' + (t === 'q' ? 'q' : '') + n;
+const dkey = (pelajaranId, n, t) => pelajaranId + '-' + (t === 'q' ? 'q' : '') + n;
 const lampRow = (it, btns) => `<div class="ditem"><span class="dn">${it.tipe === 'link' ? '🔗 ' + esc(it.url) : '📄 ' + esc(it.nama) + (it.size ? ' <small>(' + sizeTxt(it.size) + ')</small>' : '')}</span><span class="row" style="flex-wrap:nowrap;gap:6px">${btns}</span></div>`;
-const lampList = (items, kind, mkId, n) => items.map((it, j) => lampRow(it, it.tipe === 'link'
-  ? `<button class="btn sm" onclick="lihatRef('${kind}','${mkId}',${n},${j},'')">Buka link</button>`
-  : `<button class="btn sm" onclick="lihatRef('${kind}','${mkId}',${n},${j},'')">Lihat</button><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'')">Unduh</button>`)).join('');
+const lampList = (items, kind, pelajaranId, n) => items.map((it, j) => lampRow(it, it.tipe === 'link'
+  ? `<button class="btn sm" onclick="lihatRef('${kind}','${pelajaranId}',${n},${j},'')">Buka link</button>`
+  : `<button class="btn sm" onclick="lihatRef('${kind}','${pelajaranId}',${n},${j},'')">Lihat</button><button class="btn ghost sm" onclick="unduhRef('${kind}','${pelajaranId}',${n},${j},'')">Unduh</button>`)).join('');
 const draftUI = (m, x, t, label) => {
   const k = dkey(m.id, x.n, t), a = `'${m.id}',${x.n},'${t}'`, d = S.draft[k] || [], tot = d.reduce((s2, it) => s2 + (it.size || 0), 0), penuh = d.length >= MAX_LAMP, menu = S.dMenu === k, linkOpen = S.dLink === k;
   const tambah = penuh ? '<div class="quote">Batas 5 lampiran tercapai. Hapus salah satu untuk menambah yang lain.</div>'
@@ -440,22 +440,22 @@ function previewHtml(f) {
   } catch (e) { return '<div class="pv none">Berkas tidak bisa ditampilkan. Gunakan tombol Unduh.</div>'; }
   return `<div class="pv none">Format .${esc(x || '?')} (misalnya Word, PowerPoint, Excel, atau ZIP) tidak bisa ditampilkan langsung oleh browser.<br>Gunakan tombol Unduh untuk membukanya.</div>`;
 }
-function refItem(kind, mkId, n, j, kid) {
-  if (kind === 'sub') return itemsOf(P(mkId, U.email).sub[n])[j];
-  if (kind === 'qx') return itemsOf(P(mkId, U.email).qext[n])[j];
-  const x = pertAt(mkId, n, kid); if (!x) return null;
+function refItem(kind, pelajaranId, n, j, kid) {
+  if (kind === 'sub') return itemsOf(P(pelajaranId, U.email).sub[n])[j];
+  if (kind === 'qx') return itemsOf(P(pelajaranId, U.email).qext[n])[j];
+  const x = pertAt(pelajaranId, n, kid); if (!x) return null;
   return (kind === 'mat' ? matOf(x) : kind === 'tl' ? tlOf(x) : qlOf(x))[j];
 }
-async function lihatRef(kind, mkId, n, j, kid) {
-  const it0 = refItem(kind, mkId, n, j, kid); if (!it0) return;
+async function lihatRef(kind, pelajaranId, n, j, kid) {
+  const it0 = refItem(kind, pelajaranId, n, j, kid); if (!it0) return;
   if (it0.tipe === 'link') { bukaLink(it0.url); return; }
   let it; try { it = await withData(it0); } catch (e) { toast('Berkas tidak bisa dibuka'); return; }
   freePv();
   modal(`<button class="btn ghost" onclick="tutupModal()">← Kembali</button><h3 style="margin:12px 0 0;word-break:break-all">${esc(it.nama)}</h3><div class="quote">${it.size ? sizeTxt(it.size) : ''}</div>${previewHtml(it)}
-  <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhRef('${kind}','${mkId}',${n},${j},'${kid || ''}')">Unduh</button></div>`, 'wide');
+  <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="unduhRef('${kind}','${pelajaranId}',${n},${j},'${kid || ''}')">Unduh</button></div>`, 'wide');
 }
-async function unduhRef(kind, mkId, n, j, kid) {
-  const it0 = refItem(kind, mkId, n, j, kid); if (!it0 || it0.tipe === 'link') return;
+async function unduhRef(kind, pelajaranId, n, j, kid) {
+  const it0 = refItem(kind, pelajaranId, n, j, kid); if (!it0 || it0.tipe === 'link') return;
   try { bukaBerkas(await withData(it0), true); } catch (e) { toast('Berkas tidak bisa diunduh'); }
 }
 
@@ -476,7 +476,7 @@ const hexOk = c => /^#[0-9a-f]{6}$/i.test(String(c || '')) ? String(c).toLowerCa
 const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const hexMix = (h, t, p) => '#' + hexRgb(h).map((v, i) => Math.round(v + (t[i] - v) * p).toString(16).padStart(2, '0')).join('');
 const hexLum = h => { const [r, g, b] = hexRgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
-function mkWarna(src) {
+function pelajaranWarna(src) {
   const c = hexOk(typeof src === 'string' ? src : src && src.warna);
   if (!c) return { c: '', st: '', cls: '', a: '', b: '', lt: false };
   const lt = hexLum(c) > 0.62, b = lt ? hexMix(c, [0, 0, 0], 0.08) : hexMix(c, [255, 255, 255], 0.35);
@@ -484,8 +484,8 @@ function mkWarna(src) {
 }
 const WARNA = [['#ffffff', 'Putih'], ['#111111', 'Hitam'], ['#2f6fed', 'Biru'], ['#1f9d55', 'Hijau'], ['#13a3a3', 'Tosca'], ['#6b4fe0', 'Ungu'], ['#ec4899', 'Pink'], ['#e5484d', 'Merah'], ['#f97316', 'Oranye'], ['#facc15', 'Kuning'], ['#92400e', 'Cokelat'], ['#6b7280', 'Abu-abu']];
 const fotoOk = f => /^https:\/\//.test(String(f || '')) ? f : '';
-const fotoOf = m => { const c = Auth.find(m.dosen); return fotoOk((c && c.pref && c.pref.foto) || m.dosenFoto); };
-const mkIc = (m, d) => { const f = fotoOf(m); return f ? `<img class="mk-ph" src="${esc(f)}" alt="" onerror="this.replaceWith(document.createTextNode('${d.ic}'))">` : d.ic; };
+const fotoOf = m => { const c = Auth.find(m.pengajar); return fotoOk((c && c.pref && c.pref.foto) || m.pengajarFoto); };
+const pelajaranIc = (m, d) => { const f = fotoOf(m); return f ? `<img class="pl-ph" src="${esc(f)}" alt="" onerror="this.replaceWith(document.createTextNode('${d.ic}'))">` : d.ic; };
 const QUOTE = '“Keberhasilan adalah jumlah usaha kecil yang diulang setiap hari.” – Robert Collier';
 const banner = () => U.verified ? '' : '<div class="card warn">⚠️ Gmail kamu belum diverifikasi. <a href="' + pageHref('profil') + '"><b>Verifikasi sekarang</b></a></div>';
 const head = () => heroB() + banner();
@@ -494,9 +494,9 @@ const sc = (l, v, ic, bg, c, sub, cls, act, pop) => `<div class="card stat${act 
 const kp = (l, v, s) => `<div class="card kp"><div class="l">${l}</div><div class="v">${v}</div>${s ? `<div class="meta"><span>${s}</span></div>` : ''}</div>`;
 const cap1 = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 const hl = (l, v) => `<span class="hlbl">${l}:</span> ${v}`;
-const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${mkIc(m, d)}</div><div><h1 style="font-size:24px">${esc(m.nama)}${m.kode ? ` <span class="hid">(${esc(m.kode)})</span>` : ''}</h1><div class="hsub">${sub}</div></div></div>`; };
+const hdr = (m, sub) => { const d = dec(m); return `<div class="row" style="margin-bottom:14px"><div class="ic" style="background:${d.col};width:50px;height:50px;font-size:24px">${pelajaranIc(m, d)}</div><div><h1 style="font-size:24px">${esc(m.nama)}${m.kode ? ` <span class="hid">(${esc(m.kode)})</span>` : ''}</h1><div class="hsub">${sub}</div></div></div>`; };
 const btnJoin = '<button class="btn lime" onclick="joinModal()">Masuk kelas</button>';
-const btnMk = '<button class="btn lime" onclick="mkModal()">Buat pelajaran</button>';
+const btnPelajaran = '<button class="btn lime" onclick="pelajaranModal()">Buat pelajaran</button>';
 const fmtDt = ts => new Date(ts).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const localIn = ts => new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const over = ts => !!ts && Date.now() > ts;
@@ -509,8 +509,8 @@ const cd = x => `<span data-exp="${absenExp(x)}">${fmt(absenExp(x) - Date.now())
 
 function courseCards(L) {
   return `<div class="courses pcs" id="pcs">${L.map((m, idx) => {
-    const d = dec(m), wa = mkWarna(m), thA = wa.c ? ` data-a="${wa.a}" data-b="${wa.b}"${wa.lt ? ' data-lt="1"' : ''}` : ''; let sub, foot, held, tot = TOTAL, pill = '', pop = '', tip = '';
-    if (isDosen) {
+    const d = dec(m), wa = pelajaranWarna(m), thA = wa.c ? ` data-a="${wa.a}" data-b="${wa.b}"${wa.lt ? ' data-lt="1"' : ''}` : ''; let sub, foot, held, tot = TOTAL, pill = '', pop = '', tip = '';
+    if (isPengajar) {
       held = m.kelas.length ? totalPert(m) / m.kelas.length : 0; tot = m.kelas.length ? m.kelas.reduce((a, k) => a + totalOf(k), 0) / m.kelas.length : TOTAL; sub = `${studentsOf(m.id).length} partisipan`;
       pill = `<span class="pc-pill">${m.kelas.length} kelas</span>`;
       foot = `<span>Pertemuan berjalan ${totalPert(m)}</span><span>${m.kelas.length ? 'Buka pelajaran →' : '<b style="color:var(--red)">Belum ada kelas</b>'}</span>`;
@@ -518,14 +518,14 @@ function courseCards(L) {
         ? m.kelas.map(k => `<button type="button" class="kchip" onclick="event.stopPropagation();bukaKelasDari('${m.id}','${k.id}')"><i>${esc(k.nama.trim().slice(-1).toUpperCase())}</i><span><b>${esc(k.nama)}</b><small>${studentsOf(m.id, k.id).length} partisipan · ${esc(k.kode)}</small></span><em>→</em></button>`).join('')
         : '<div class="hv-row muted">Belum ada kelas. Klik pelajaran ini untuk membuatnya.</div>'}</div><div class="hv-foot"><span></span><span>Klik pelajaran untuk semua kelas ›</span></div></div>`;
     } else {
-      const s2 = stats(m, U.email), p = P(m.id, U.email); held = s2.held; tot = totalOf(kelasOf(m, U.email)); sub = esc(m.dosenNama);
+      const s2 = stats(m, U.email), p = P(m.id, U.email); held = s2.held; tot = totalOf(kelasOf(m, U.email)); sub = esc(m.pengajarNama);
       const mw = [s2.todoT && `${s2.todoT} tugas`, s2.todoQ && `${s2.todoQ} quiz`].filter(Boolean).join(' & ');
       foot = `<span>Pertemuan ${s2.held}/${totalOf(kelasOf(m, U.email))}</span><span>${mw ? `<b style="color:var(--red)">${mw} menunggu</b>` : 'Tugas beres'}</span>`;
       if (pertOf(m, U.email).some(x => absenOpen(x) && !p.att[x.n])) pill = '<span class="pc-pill live">🔔 Absen dibuka</span>';
       const lw = s2.lewat ? ` · <b class="neg">terlewat ${s2.lewat}</b>` : '';
-      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"${thA}><div class="hv-head"><span class="hv-ic">${mkIc(m, d)}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
+      tip = `<div class="hv-src" hidden data-dir="auto" data-th="th${d.i}"${thA}><div class="hv-head"><span class="hv-ic">${pelajaranIc(m, d)}</span><div><b>${esc(m.nama)}</b><small>${sub}</small></div></div><div class="hv-body"><div class="pcp-s"><div class="pcs-i"><span>Total pertemuan</span><b>${s2.held}</b><small>${s2.held ? `Hadir ${s2.hadir} kali${lw}` : 'Belum ada pertemuan'}</small></div><div class="pcs-i"><span>Tugas selesai</span><b>${s2.done}<i class="of">/${s2.tasks}</i></b><small>${mw ? `Menunggu: ${mw}` : (s2.tasks ? 'Semua beres 🎉' : 'Belum ada tugas')}</small></div></div></div><div class="hv-foot"><span></span><span>Klik kartu untuk detail ›</span></div></div>`;
     }
-    return `<div class="pc th${d.i}${wa.cls}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx};${wa.st}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${mkIc(m, d)}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
+    return `<div class="pc th${d.i}${wa.cls}" data-n="${esc(m.nama.toLowerCase())}" style="--i:${idx};${wa.st}" role="link" tabindex="0" aria-label="Buka pelajaran ${esc(m.nama)}" onclick="go('course','${m.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();go('course','${m.id}')}"><div class="pc-top"><span class="pc-ic">${pelajaranIc(m, d)}</span>${pill}</div><div class="pc-body"><b>${esc(m.nama)}</b><span class="s">${sub}</span><div class="bar"><i style="width:${Math.min(100, held / tot * 100)}%"></i></div><div class="meta">${foot}</div></div>${pop}${tip}</div>`;
   }).join('')}</div>`;
 }
 let hvEl = null, hvCur = null, hvBl = [], hvT = 0, hvPend = null, hvShowT = 0;
@@ -621,7 +621,7 @@ function initPcTip() {
   document.addEventListener('scroll', hidePcTip, true);
   window.addEventListener('resize', hidePcTip);
 }
-function bukaKelasDari(mkId, kid) { S.cid = mkId; bukaKelas(kid); }
+function bukaKelasDari(pelajaranId, kid) { S.cid = pelajaranId; bukaKelas(kid); }
 function filterPelajaran(q) {
   q = q.trim().toLowerCase(); let n = 0;
   document.querySelectorAll('#pcs .pc').forEach(c => { const ok = !q || c.dataset.n.includes(q); c.hidden = !ok; if (ok) n++; });
@@ -631,14 +631,14 @@ function filterPelajaran(q) {
 
 function ringkas(u) {
   if (u.role === 'Pengajar') {
-    const mine = st.mk().filter(m => m.dosen === u.email); let kelas = 0, mhs = 0, pert = 0, kirim = 0, nilai = 0;
+    const mine = st.pelajaran().filter(m => m.pengajar === u.email); let kelas = 0, partisipan = 0, pert = 0, kirim = 0, nilai = 0;
     mine.forEach(m => m.kelas.forEach(k => {
-      kelas++; pert += k.pert.length; const ss = studentsOf(m.id, k.id); mhs += ss.length;
+      kelas++; pert += k.pert.length; const ss = studentsOf(m.id, k.id); partisipan += ss.length;
       k.pert.forEach(x => ss.forEach(w => { const q = P(m.id, w.email); if (x.tugas && q.sub[x.n]) { kirim++; if (!q.nilai[x.n]) nilai++; } const qe = q.qext[x.n]; if (qlOf(x).length && qeOk(qe) && itemsOf(qe).length) { kirim++; if (!qe.nilai) nilai++; } }));
     }));
-    return { mine, tiles: [[mine.length, 'Pelajaran diampu'], [kelas, 'Total kelas'], [mhs, 'Partisipan'], [pert, 'Pertemuan dibuat'], [kirim, 'Tugas & quiz terkumpul'], [nilai, 'Perlu dinilai']] };
+    return { mine, tiles: [[mine.length, 'Pelajaran diampu'], [kelas, 'Total kelas'], [partisipan, 'Partisipan'], [pert, 'Pertemuan dibuat'], [kirim, 'Tugas & quiz terkumpul'], [nilai, 'Perlu dinilai']] };
   }
-  const L = st.jn().filter(j => j.mhs === u.email).map(j => getMk(j.mkId)).filter(Boolean); let hadir = 0, held = 0, tasks = 0, done = 0; const skor = [];
+  const L = st.jn().filter(j => j.partisipan === u.email).map(j => getPelajaran(j.pelajaranId)).filter(Boolean); let hadir = 0, held = 0, tasks = 0, done = 0; const skor = [];
   L.forEach(m => { const q = stats(m, u.email); hadir += q.hadir; held += q.held; tasks += q.tasks; done += q.done; Object.values(P(m.id, u.email).nilai).forEach(nl => { if (nl.skor != null) skor.push(nl.skor); }); });
   const avg = skor.length ? Math.round(skor.reduce((x, y) => x + y, 0) / skor.length * 10) / 10 : '—';
   return { mine: L, tiles: [[L.length, 'Pelajaran diikuti'], [hadir + '/' + held, 'Pertemuan dihadiri'], [held ? Math.round(hadir / held * 100) + '%' : '—', 'Tingkat kehadiran'], [done + '/' + tasks, 'Tugas & quiz selesai'], [tasks - done, 'Perlu dikerjakan'], [avg, 'Rata-rata nilai tugas']] };
@@ -726,9 +726,9 @@ function tickTop() {
   box.hidden = false;
 }
 function topInfo() {
-  TOP_DL = null; if (!U || isDosen) return;
+  TOP_DL = null; if (!U || isPengajar) return;
   let best = null;
-  myMk().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
+  myPelajaran().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
     const c = [];
     if (x.tugas && !p.sub[x.n] && !p.kembali[x.n]) c.push(x.tugasDl);
     if (adaQuiz(x) && !quizDone(p, x)) c.push(x.quizDl);
@@ -816,36 +816,36 @@ function jdCard(L, pf) {
   return `<div class="card jd${c.ongoing ? ' on' : ''}" style="--jc:var(--g7)"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Jadwal pelajaran berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div></div>${btn}</div>`;
 }
 function jdTick() {
-  const el = document.getElementById('jdLive'); if (!el || isDosen) return;
-  const c = nextJadwal(myMk());
+  const el = document.getElementById('jdLive'); if (!el || isPengajar) return;
+  const c = nextJadwal(myPelajaran());
   if (!c || jdKey(c) !== el.dataset.k) { render(); return; }
   const k = jdCount(c); el.textContent = k.txt; el.className = 'jd-cd ' + k.cls;
 }
 function jadwalPage() {
-  if (isDosen) { S.view = 'home'; return home(); }
-  const L = myMk(), c = nextJadwal(L), today = new Date().getDay(), by = {}, none = [];
+  if (isPengajar) { S.view = 'home'; return home(); }
+  const L = myPelajaran(), c = nextJadwal(L), today = new Date().getDay(), by = {}, none = [];
   L.forEach(m => { const sl = parseJadwal(m.jadwal); if (!sl.length) none.push(m); sl.forEach(s => (by[s.day] = by[s.day] || []).push({ m, s })); });
   const back = `<button class="back" onclick="go('home')"><span class="arr" aria-hidden="true">←</span> Kembali ke Beranda</button>`;
   const nSesi = Object.values(by).reduce((a, x) => a + x.length, 0), nHari = (by[today] || []).length;
   const top = `<section class="pg-hero jd-hero"><span class="pgd d1" aria-hidden="true">📅</span><span class="pgd d2" aria-hidden="true">⏰</span><span class="pgd d3" aria-hidden="true">🗓️</span><div class="pgh-txt"><span class="jd-date">${tglID()}</span><h1>Jadwal pelajaran</h1><p class="quote">Jadwal mingguan semua pelajaran yang kamu ikuti.</p><div class="jd-stats"><span class="jd-stat">${L.length} pelajaran</span><span class="jd-stat">${nSesi} sesi per minggu</span><span class="jd-stat">${nHari} sesi hari ini</span></div></div></section>`;
   if (!L.length) return back + top + empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar, lalu jadwal pelajarannya muncul di sini.', btnJoin);
-  const nx = c ? `<div class="card jd jd-big${c.ongoing ? ' on' : ''}" style="--jc:var(--g7)"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div><small class="jd-by">Pengajar: ${esc(c.m.dosenNama)}</small></div><button class="btn ghost jd-btn" onclick="go('course','${c.m.id}')">Buka pelajaran →</button></div>` : '';
+  const nx = c ? `<div class="card jd jd-big${c.ongoing ? ' on' : ''}" style="--jc:var(--g7)"><div class="jd-ic" aria-hidden="true">${c.ongoing ? '🔔' : '📅'}</div><div class="jd-tx"><small class="jd-k">Berikutnya</small><b class="jd-t">${esc(c.m.nama)}</b><div class="jd-m"><span class="jd-when">${jdWhen(c)}</span>${jdLive(c)}</div><small class="jd-by">Pengajar: ${esc(c.m.pengajarNama)}</small></div><button class="btn ghost jd-btn" onclick="go('course','${c.m.id}')">Buka pelajaran →</button></div>` : '';
   const days = [1, 2, 3, 4, 5, 6, 0].map((dn, i) => {
     const it = (by[dn] || []).sort((a, b) => (a.s.sm == null ? 1e4 : a.s.sm) - (b.s.sm == null ? 1e4 : b.s.sm));
-    return `<section class="jd-day${dn === today ? ' now' : ''}${it.length ? '' : ' none'}" style="--i:${i}"><header><b>${HARI[dn]}</b>${dn === today ? '<span class="jd-today">Hari ini</span>' : ''}</header>${it.length ? it.map(({ m, s }) => { const d = dec(m); return `<button type="button" class="jd-it${c && c.m.id === m.id && c.s === s ? ' next' : ''}" style="--jc:var(--g7)" onclick="go('course','${m.id}')"><span class="jd-tm">${s.sm != null ? jdRange(s) : 'Sepanjang hari'}</span><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}</small></button>`; }).join('') : '<p class="jd-free">Tidak ada jadwal</p>'}</section>`;
+    return `<section class="jd-day${dn === today ? ' now' : ''}${it.length ? '' : ' none'}" style="--i:${i}"><header><b>${HARI[dn]}</b>${dn === today ? '<span class="jd-today">Hari ini</span>' : ''}</header>${it.length ? it.map(({ m, s }) => { const d = dec(m); return `<button type="button" class="jd-it${c && c.m.id === m.id && c.s === s ? ' next' : ''}" style="--jc:var(--g7)" onclick="go('course','${m.id}')"><span class="jd-tm">${s.sm != null ? jdRange(s) : 'Sepanjang hari'}</span><b>${esc(m.nama)}</b><small>${esc(m.pengajarNama)}</small></button>`; }).join('') : '<p class="jd-free">Tidak ada jadwal</p>'}</section>`;
   }).join('');
   const nn = none.length ? `<h2>Belum ada jadwal</h2><div class="jd-nolist">${none.map(m => `<button type="button" class="jd-it" style="--jc:${dec(m).col}" onclick="go('course','${m.id}')"><b>${esc(m.nama)}</b><small>${m.jadwal ? 'Jadwal tertulis “' + esc(m.jadwal) + '” belum terbaca otomatis. Tanyakan ke pengajar agar jadwalnya diisi ulang.' : 'Pengajar belum mengisi jadwal.'}</small></button>`).join('')}</div>` : '';
   return back + top + nx + `<div class="jd-week">${days}</div>` + nn;
 }
 
 function home() {
-  const L = myMk();
-  if (isDosen) {
-    if (!L.length) return head() + empty('🧑‍🏫', 'Kamu belum membuat pelajaran', 'Buat pelajaran dulu, lalu buat kelas (A, B, C…) dan bagikan kode kelasnya ke partisipan.', btnMk);
-    const kls = L.reduce((a, m) => a + m.kelas.length, 0), mhs = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
+  const L = myPelajaran();
+  if (isPengajar) {
+    if (!L.length) return head() + empty('🧑‍🏫', 'Kamu belum membuat pelajaran', 'Buat pelajaran dulu, lalu buat kelas (A, B, C…) dan bagikan kode kelasnya ke partisipan.', btnPelajaran);
+    const kls = L.reduce((a, m) => a + m.kelas.length, 0), partisipan = L.reduce((a, m) => a + studentsOf(m.id).length, 0);
     const nDinilai = ringkas(U).tiles[5][0], pfD = prefOf(U);
     const hero = head();
-    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#eefad0', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#eefad0', '', '', '', "go('courses')")}${sc('Partisipan bergabung', mhs, '🎒', '#eefad0', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
+    return hero + (nDinilai > 0 && pfD.nl !== false ? `<div class="card absen"><div><b>📝 ${nDinilai} tugas/quiz menunggu penilaian</b><div class="quote">Tekan Lihat untuk melihat pelajaran, kelas, dan pertemuan yang perlu dinilai.</div></div><button class="btn lime" onclick="perluDinilaiModal()">Lihat</button></div>` : '') + `<h2>Ringkasan</h2><div class="grid3">${sc('Pelajaran', L.length, '📚', '#eefad0', '', '', '', "go('courses')")}${sc('Total kelas', kls, '🏷️', '#eefad0', '', '', '', "go('courses')")}${sc('Partisipan bergabung', partisipan, '🎒', '#eefad0', '', '', '', "go('courses')")}</div><h2>Pelajaran</h2>${courseCards(L)}`;
   }
   if (!L.length) return head() + empty('🔑', 'Kamu belum bergabung ke kelas mana pun', 'Minta kode kelas ke pengajarmu, lalu masukkan di sini. Progres, pelajaran, dan tugas akan muncul setelah kamu bergabung.', btnJoin);
   const t = L.reduce((a, m) => { const s2 = stats(m, U.email); ['done', 'todo', 'missed', 'hadir', 'held', 'lewat', 'tasks', 'todoT', 'todoQ'].forEach(k => a[k] += s2[k]); return a; }, { done: 0, todo: 0, missed: 0, hadir: 0, held: 0, lewat: 0, tasks: 0, todoT: 0, todoQ: 0 });
@@ -868,7 +868,7 @@ function home() {
 }
 function statRows(kind) {
   const rows = [];
-  myMk().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
+  myPelajaran().forEach(m => { const p = P(m.id, U.email); pertOf(m, U.email).forEach(x => {
     if (kind === 'todo') {
       if (x.tugas && !p.sub[x.n] && (p.kembali[x.n] || !over(x.tugasDl))) rows.push({ m, x, chip: p.kembali[x.n] ? ['Dikembalikan', 'c-no'] : ['Tugas', 'c-iz'], dl: p.kembali[x.n] ? null : x.tugasDl });
       if (adaQuiz(x) && !quizDone(p, x) && !over(x.quizDl)) rows.push({ m, x, chip: ['Quiz', 'c-bl'], dl: x.quizDl });
@@ -901,24 +901,24 @@ function statPop(kind, dir) {
   const sub = kind === 'pert' ? `Hadir ${hadir} · terlewat ${lewat} · total ${rows.length}` : `${rows.length} item`;
   return `<div class="hv-src" hidden data-dir="${dir}" data-th="k-${kind}"><div class="hv-head"><span class="hv-ic">${K[0]}</span><div><b>${K[1]}</b><small>${sub}</small></div></div><div class="hv-body">${show.length ? show.map(r => `<div class="hv-row"><span class="chip ${r.chip[1]}">${r.chip[0]}</span><span class="spt"><b>${esc(r.m.nama)}</b> · P${r.x.n}: ${esc(r.x.topik)}</span></div>`).join('') : `<div class="hv-row muted">${kosong}</div>`}</div><div class="hv-foot"><span>${sisa > 0 ? `+${sisa} lainnya` : ''}</span><span>Klik kartu untuk lihat semua ›</span></div></div>`;
 }
-function bukaItem(mkId, n) { S.view = 'course'; S.cid = mkId; S.open[mkId + '-' + n] = true; render(); window.scrollTo(0, 0); }
+function bukaItem(pelajaranId, n) { S.view = 'course'; S.cid = pelajaranId; S.open[pelajaranId + '-' + n] = true; render(); window.scrollTo(0, 0); }
 
 function coursesPage() {
-  const L = myMk();
-  const act = isDosen ? '<button class="btn lime" onclick="mkModal()">+ Buat pelajaran</button>' : '<div class="row"><button class="btn ghost" onclick="go(\'jadwal\')">📅 Jadwal</button><button class="btn lime" onclick="joinModal()">+ Masuk kelas</button></div>';
-  const top = `<section class="pg-hero"><span class="pgd d1" aria-hidden="true">📚</span><span class="pgd d2" aria-hidden="true">✏️</span><span class="pgd d3" aria-hidden="true">🎒</span><div class="pgh-txt"><h1>Pelajaran</h1><p class="quote">${isDosen ? 'Arahkan kursor ke pelajaran untuk memilih kelasnya, atau klik pelajaran untuk melihat informasinya.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${act}</section>`;
-  if (!L.length) return top + (isDosen ? empty('📚', 'Belum ada pelajaran', 'Buat pelajaran, lalu buat kelas beserta kode kelas untuk dibagikan ke partisipan.', btnMk) : empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar untuk melihat pelajaranmu.', btnJoin));
+  const L = myPelajaran();
+  const act = isPengajar ? '<button class="btn lime" onclick="pelajaranModal()">+ Buat pelajaran</button>' : '<div class="row"><button class="btn ghost" onclick="go(\'jadwal\')">📅 Jadwal</button><button class="btn lime" onclick="joinModal()">+ Masuk kelas</button></div>';
+  const top = `<section class="pg-hero"><span class="pgd d1" aria-hidden="true">📚</span><span class="pgd d2" aria-hidden="true">✏️</span><span class="pgd d3" aria-hidden="true">🎒</span><div class="pgh-txt"><h1>Pelajaran</h1><p class="quote">${isPengajar ? 'Arahkan kursor ke pelajaran untuk memilih kelasnya, atau klik pelajaran untuk melihat informasinya.' : 'Pilih pelajaran untuk melihat absen, tugas, materi, dan quiz.'}</p></div>${act}</section>`;
+  if (!L.length) return top + (isPengajar ? empty('📚', 'Belum ada pelajaran', 'Buat pelajaran, lalu buat kelas beserta kode kelas untuk dibagikan ke partisipan.', btnPelajaran) : empty('🔑', 'Belum ada pelajaran', 'Masuk kelas dengan kode dari pengajar untuk melihat pelajaranmu.', btnJoin));
   return top + `<div class="pg-tools"><label class="pg-search"><span aria-hidden="true">🔍</span><input id="pSearch" type="search" placeholder="Cari pelajaran…" oninput="filterPelajaran(this.value)" autocomplete="off" aria-label="Cari pelajaran"></label><span class="pg-count" id="pCount">${L.length} pelajaran</span></div>${courseCards(L)}<p class="empty" id="pEmpty" hidden>Tidak ada pelajaran yang cocok.</p>`;
 }
 function coursePage() {
-  const m = getMk(S.cid);
-  if (!m || !myMk().some(x => x.id === m.id)) { S.view = 'courses'; return coursesPage(); }
-  return isDosen ? courseD(m) : courseM(m);
+  const m = getPelajaran(S.cid);
+  if (!m || !myPelajaran().some(x => x.id === m.id)) { S.view = 'courses'; return coursesPage(); }
+  return isPengajar ? courseD(m) : courseM(m);
 }
 
 function courseM(m) {
   const s2 = stats(m, U.email), p = P(m.id, U.email), pt = pertOf(m, U.email), pct = s2.held ? Math.round(s2.hadir / s2.held * 100) : 0;
-  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, hl('Pengajar', esc(m.dosenNama)) + (m.jadwal ? ' <span class="hdot">·</span> ' + hl('Jadwal', esc(cap1(m.jadwal))) : ''))}
+  return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, hl('Pengajar', esc(m.pengajarNama)) + (m.jadwal ? ' <span class="hdot">·</span> ' + hl('Jadwal', esc(cap1(m.jadwal))) : ''))}
   <div class="row" style="margin:-4px 0 16px"><button class="btn ghost dng" onclick="keluarModal('${m.id}')">🚪 Keluar dari pelajaran</button></div>
   <div class="grid4">${kp('Kehadiran', `${s2.hadir}<small>/${s2.held}</small>`, pct + '% hadir')}${kp('Total pertemuan', `${s2.held}<small>/${totalOf(kelasOf(m, U.email))}</small>`)}${kp('Tugas selesai', `${s2.done}<small>/${s2.tasks}</small>`)}${kp('Perlu dikerjakan', `<span style="color:${s2.todo ? 'var(--red)' : 'inherit'}">${s2.todo}</span>`)}</div>
   <h2>Daftar pertemuan</h2>${pt.length ? pt.map(x => meetingM(m, x, p)).join('') : '<p class="empty">Pengajar belum membuka pertemuan.</p>'}`;
@@ -965,13 +965,13 @@ function meetingM(m, x, p) {
   return `<div class="mt"><button aria-expanded="${!!o}" onclick="tog('${k}')"><div class="n">${x.n}</div><div class="t">${esc(x.topik)}<small>${tag}</small></div>${bd}</button>${body}</div>`;
 }
 function tog(k) { S.open[k] = !S.open[k]; render(); }
-function absenSendiri(mkId, n) {
-  const x = pertAt(mkId, n);
-  if (!x || !myMk().some(q => q.id === mkId)) return;
+function absenSendiri(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n);
+  if (!x || !myPelajaran().some(q => q.id === pelajaranId)) return;
   if (!absenOpen(x)) { toast('Batas waktu absen sudah lewat'); render(); return; }
-  const p = P(mkId, U.email);
+  const p = P(pelajaranId, U.email);
   if (p.att[n]) { toast('Absenmu sudah tercatat'); return; }
-  p.att[n] = 'H'; setP(mkId, U.email, p); toast('Absen berhasil ✅'); render();
+  p.att[n] = 'H'; setP(pelajaranId, U.email, p); toast('Absen berhasil ✅'); render();
 }
 async function addFiles(d, files) {
   let msg = '';
@@ -990,19 +990,19 @@ function addLink(d, v) {
   if (d.some(it => it.tipe === 'link' && it.url === v)) return 'Link ini sudah ditambahkan.';
   d.push({ tipe: 'link', url: v }); return '';
 }
-async function tambahFile(mkId, n, t) {
-  const k = dkey(mkId, n, t), inp = document.getElementById('fd-' + k);
+async function tambahFile(pelajaranId, n, t) {
+  const k = dkey(pelajaranId, n, t), inp = document.getElementById('fd-' + k);
   if (!inp || !inp.files || !inp.files.length) return;
   const msg = await addFiles(S.draft[k] = S.draft[k] || [], [...inp.files]);
   inp.value = ''; if (msg) toast(msg); render();
 }
-function tambahLink(mkId, n, t) {
-  const k = dkey(mkId, n, t), inp = document.getElementById('ld-' + k); if (!inp) return;
+function tambahLink(pelajaranId, n, t) {
+  const k = dkey(pelajaranId, n, t), inp = document.getElementById('ld-' + k); if (!inp) return;
   const msg = addLink(S.draft[k] = S.draft[k] || [], inp.value.trim());
   if (msg) { toast(msg); return; }
   inp.value = ''; S.dLink = null; render();
 }
-function hapusDraft(mkId, n, t, i) { const d = S.draft[dkey(mkId, n, t)]; if (d) d.splice(i, 1); render(); }
+function hapusDraft(pelajaranId, n, t, i) { const d = S.draft[dkey(pelajaranId, n, t)]; if (d) d.splice(i, 1); render(); }
 const FILEC = {};
 const safeName = n => String(n).normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-80) || 'berkas';
 async function upItems(list, prefix) {
@@ -1030,59 +1030,59 @@ async function withData(it) {
   return { ...it, data: FILEC[it.path] };
 }
 let BUSY = false;
-async function send(mkId, n, t) {
+async function send(pelajaranId, n, t) {
   if (BUSY) return;
   S.dMenu = null; S.dLink = null;
-  const x = pertAt(mkId, n); if (!x) return;
-  const k = dkey(mkId, n, t), d = S.draft[k] || [];
+  const x = pertAt(pelajaranId, n); if (!x) return;
+  const k = dkey(pelajaranId, n, t), d = S.draft[k] || [];
   if (!d.length) { toast('Tambahkan minimal satu file atau link dulu'); return; }
   if (t === 'q') { if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; } }
-  else { const p0 = P(mkId, U.email); if (over(x.tugasDl) && !legacyFile(p0.sub[n]) && !p0.kembali[n]) { toast('Batas waktu pengumpulan sudah lewat'); render(); return; } }
+  else { const p0 = P(pelajaranId, U.email); if (over(x.tugasDl) && !legacyFile(p0.sub[n]) && !p0.kembali[n]) { toast('Batas waktu pengumpulan sudah lewat'); render(); return; } }
   let items;
   BUSY = true;
-  try { toast('Mengirim…'); items = await upItems(d, mkId + '/u/' + U.uid); }
+  try { toast('Mengirim…'); items = await upItems(d, pelajaranId + '/u/' + U.uid); }
   catch (e) { toast('Gagal mengunggah berkas: ' + ((e && e.message) || e)); return; }
   finally { BUSY = false; }
-  const p = P(mkId, U.email);
+  const p = P(pelajaranId, U.email);
   if (t === 'q') p.qext[n] = { at: Date.now(), items };
   else {
     const a = items[0];
     p.sub[n] = { nama: (a.tipe === 'link' ? a.url : a.nama) + (items.length > 1 ? ' (+' + (items.length - 1) + ' lainnya)' : ''), at: Date.now(), items };
     delete p.kembali[n];
   }
-  setP(mkId, U.email, p);
+  setP(pelajaranId, U.email, p);
   S.draft[k] = []; toast(t === 'q' ? 'Hasil quiz terkirim' : 'Tugas terkirim'); render();
 }
-function tandaiQuiz(mkId, n) {
-  const x = pertAt(mkId, n); if (!x) return;
+function tandaiQuiz(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n); if (!x) return;
   if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
-  const p = P(mkId, U.email); p.qext[n] = { at: Date.now(), items: [] }; setP(mkId, U.email, p); toast('Quiz ditandai selesai ✅'); render();
+  const p = P(pelajaranId, U.email); p.qext[n] = { at: Date.now(), items: [] }; setP(pelajaranId, U.email, p); toast('Quiz ditandai selesai ✅'); render();
 }
-function batalQext(mkId, n) {
-  const x = pertAt(mkId, n); if (x && over(x.quizDl)) { toast('Batas waktu sudah lewat'); return; }
-  const p = P(mkId, U.email); if (p.qext[n] && p.qext[n].nilai) { toast('Quiz sudah dinilai, tidak bisa dibatalkan'); return; } delete p.qext[n]; setP(mkId, U.email, p); render();
+function batalQext(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n); if (x && over(x.quizDl)) { toast('Batas waktu sudah lewat'); return; }
+  const p = P(pelajaranId, U.email); if (p.qext[n] && p.qext[n].nilai) { toast('Quiz sudah dinilai, tidak bisa dibatalkan'); return; } delete p.qext[n]; setP(pelajaranId, U.email, p); render();
 }
-function unsend(mkId, n) {
-  const x = pertAt(mkId, n), p = P(mkId, U.email);
+function unsend(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n), p = P(pelajaranId, U.email);
   if (x && over(x.tugasDl)) { toast('Batas waktu sudah lewat'); return; }
   if (p.nilai[n]) { toast('Tugas sudah dinilai, tidak bisa dikirim ulang'); return; }
-  delete p.sub[n]; setP(mkId, U.email, p); render();
+  delete p.sub[n]; setP(pelajaranId, U.email, p); render();
 }
-function quiz(mkId, n) {
-  const x = pertAt(mkId, n);
+function quiz(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n);
   if (!x) return;
   if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); render(); return; }
   modal(`<h3>Quiz: ${esc(x.topik)}</h3><div class="quote">Pilih satu jawaban per soal. ${x.quizDl ? 'Batas: ' + fmtDt(x.quizDl) : ''}</div>
   ${x.quiz.map((q, i) => `<div class="q"><p>${i + 1}. ${esc(q.q)}</p>${q.o.map((o, j) => `<label><input type="radio" name="q${i}" value="${j}"> ${esc(o)}</label>`).join('')}</div>`).join('')}
-  <div class="row"><button class="btn lime" onclick="grade('${mkId}',${n})">Kirim jawaban</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div>`);
+  <div class="row"><button class="btn lime" onclick="grade('${pelajaranId}',${n})">Kirim jawaban</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div>`);
 }
-function grade(mkId, n) {
-  const x = pertAt(mkId, n); if (!x) return;
+function grade(pelajaranId, n) {
+  const x = pertAt(pelajaranId, n); if (!x) return;
   if (over(x.quizDl)) { toast('Batas waktu quiz sudah lewat'); tutupModal(); render(); return; }
   const qs = x.quiz; let ok = 0, miss = false;
   qs.forEach((q, i) => { const r = document.querySelector(`input[name=q${i}]:checked`); if (!r) { miss = true; return; } if (+r.value === q.a) ok++; });
   if (miss) { toast('Jawab semua soal dulu'); return; }
-  const sc2 = Math.round(ok / qs.length * 100), p = P(mkId, U.email); p.quiz[n] = sc2; p.qt[n] = Date.now(); setP(mkId, U.email, p);
+  const sc2 = Math.round(ok / qs.length * 100), p = P(pelajaranId, U.email); p.quiz[n] = sc2; p.qt[n] = Date.now(); setP(pelajaranId, U.email, p);
   qs.forEach((q, i) => document.querySelectorAll(`input[name=q${i}]`).forEach(r => { const l = r.parentElement; r.disabled = true; if (+r.value === q.a) l.classList.add('ok'); else if (r.checked) l.classList.add('bad'); }));
   document.querySelector('.sheet .row').innerHTML = `<span class="chip c-bl">Nilai kamu: ${sc2}</span><button class="btn" onclick="tutupModal();render()">Selesai</button>`;
 }
@@ -1093,7 +1093,7 @@ function courseD(m) {
     return `<button class="course" onclick="bukaKelas('${k.id}')"><div class="hd"><div class="ic" style="background:var(--limeS);font-weight:800">${esc(k.nama.trim().slice(-1).toUpperCase())}</div><div><b>${esc(k.nama)}</b><span class="s">${n} partisipan</span></div><span class="code-pill" style="margin-left:auto">${esc(k.kode)}</span></div><div class="bar"><i style="width:${Math.min(100, k.pert.length / totalOf(k) * 100)}%"></i></div><div class="meta"><span>Pertemuan ${k.pert.length}/${totalOf(k)}</span><span>Buka kelas →</span></div></button>`;
   }).join('');
   return `<button class="back" onclick="go('courses')"><span class="arr" aria-hidden="true">←</span> Kembali ke Semua pelajaran</button>${hdr(m, m.jadwal ? hl('Jadwal', esc(cap1(m.jadwal))) : 'Pelajaran saya')}
-  <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="mkModal('${m.id}')">✏️ Ubah pelajaran</button><button class="btn ghost dng" onclick="hapusMkModal('${m.id}')">🗑 Hapus pelajaran</button></div>
+  <div class="row" style="margin:-4px 0 16px"><button class="btn ghost" onclick="pelajaranModal('${m.id}')">✏️ Ubah pelajaran</button><button class="btn ghost dng" onclick="hapusPelajaranModal('${m.id}')">🗑 Hapus pelajaran</button></div>
   <div class="grid3">${kp('Kelas', m.kelas.length)}${kp('Partisipan bergabung', studentsOf(m.id).length)}${kp('Pertemuan berjalan', totalPert(m), 'total dari semua kelas')}</div>
   <h2>Kelas</h2>${cards ? `<div class="courses">${cards}</div>` : '<p class="empty">Belum ada kelas. Buat kelas pertama di bawah.</p>'}
   <div class="card" style="margin-top:16px"><b>Buat kelas baru</b><p class="quote">Contoh: nama "Kelas A", kode "PBO-A". Kode inilah yang diberikan ke partisipan. Jumlah pertemuan ditentukan olehmu (1–${MAXP}).</p>
@@ -1110,21 +1110,21 @@ async function kodeDipakai(kode, kelasId, e) {
   if (data) { e.textContent = 'Kode ini sudah dipakai kelas lain. Pilih kode yang berbeda.'; return true; }
   return false;
 }
-function acak(mkId) {
-  const m = getMk(mkId);
+function acak(pelajaranId) {
+  const m = getPelajaran(pelajaranId);
   const ini = (m.kode || m.nama.split(/\s+/).map(w => w[0]).join('')).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'KLS';
   const l = ($('#kNama').value.trim().slice(-1) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   $('#kKode').value = `${ini}-${l}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 }
-async function addKelas(mkId) {
+async function addKelas(pelajaranId) {
   const nama = $('#kNama').value.trim(), kode = $('#kKode').value.trim().toUpperCase(), e = $('#kErr');
   if (!nama) { e.textContent = 'Nama kelas wajib diisi.'; return; }
   if (!/^[A-Z0-9-]{4,16}$/.test(kode)) { e.textContent = 'Kode kelas 4–16 karakter: huruf, angka, atau tanda hubung.'; return; }
   const total = cekTotal($('#kTotal').value);
   if (!total) { e.textContent = 'Jumlah pertemuan harus bilangan bulat 1–' + MAXP + '.'; return; }
   if (await kodeDipakai(kode, null, e)) return;
-  const m = getMk(mkId); m.kelas.push({ id: uid('k'), nama, kode, total, pert: [] });
-  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  const m = getPelajaran(pelajaranId); m.kelas.push({ id: uid('k'), nama, kode, total, pert: [] });
+  if (!savePelajaran(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   render(); toast('Kelas dibuat (' + total + ' pertemuan). Kode: ' + kode);
 }
 function salin(kode) {
@@ -1132,10 +1132,10 @@ function salin(kode) {
 }
 
 function ctxKelas() {
-  const m = getMk(S.cid), k = getKelas(m, S.kid);
-  return isDosen && m && k && m.dosen === U.email ? { m, k } : null;
+  const m = getPelajaran(S.cid), k = getKelas(m, S.kid);
+  return isPengajar && m && k && m.pengajar === U.email ? { m, k } : null;
 }
-function ringkasMhs(m, k, u) {
+function ringkasPartisipan(m, k, u) {
   const p = P(m.id, u.email), r = { p, n: k.pert.length, hadir: 0, tN: 0, tD: 0, qN: 0, qD: 0 };
   k.pert.forEach(x => {
     if (p.att[x.n] === 'H') r.hadir++;
@@ -1151,10 +1151,10 @@ function mhList(k, p, t) {
   if (t === 't') return k.pert.filter(x => x.tugas).map(x => { const f = p.sub[x.n], nl = p.nilai[x.n]; return row(x, nl ? `<span class="chip c-ok">Dinilai${nl.skor != null ? ' · ' + nl.skor : ''}</span>` : f ? '<span class="chip c-iz">Terkirim · perlu dinilai</span>' : p.kembali[x.n] ? '<span class="chip c-iz">Dikembalikan</span>' : '<span class="chip c-wait">Belum dikirim</span>'); }).join('') || '<div class="mh-empty">Belum ada tugas yang dibuat.</div>';
   return k.pert.filter(adaQuiz).map(x => row(x, quizDone(p, x) ? `<span class="chip c-bl">${x.quiz.length && p.quiz[x.n] != null ? 'Nilai ' + p.quiz[x.n] : 'Selesai'}</span>` : '<span class="chip c-wait">Belum dikerjakan</span>')).join('') || '<div class="mh-empty">Belum ada quiz yang dibuat.</div>';
 }
-function tabMhs(key, t) { S.open[key] = S.open[key] === t ? '' : t; render(); }
+function tabPartisipan(key, t) { S.open[key] = S.open[key] === t ? '' : t; render(); }
 function partisipanCard(m, k, u, i) {
-  const r = ringkasMhs(m, k, u), key = 'prt-' + k.id + '-' + String(u.email).replace(/[^\w@.\-]/g, '_'), tab = S.open[key] || '';
-  const tb = (t, l, d, n) => `<button class="btn ghost sm mh-tab${tab === t ? ' on' : ''}" aria-expanded="${tab === t}" onclick="tabMhs('${key}','${t}')">${l} <b>${d}/${n}</b></button>`;
+  const r = ringkasPartisipan(m, k, u), key = 'prt-' + k.id + '-' + String(u.email).replace(/[^\w@.\-]/g, '_'), tab = S.open[key] || '';
+  const tb = (t, l, d, n) => `<button class="btn ghost sm mh-tab${tab === t ? ' on' : ''}" aria-expanded="${tab === t}" onclick="tabPartisipan('${key}','${t}')">${l} <b>${d}/${n}</b></button>`;
   return `<div class="mh-card"><div class="mh-head"><div class="mh-av" aria-hidden="true">${esc((u.nama || '?').trim().charAt(0).toUpperCase())}</div><div class="mh-info"><b>${esc(u.nama)}</b><span>${esc(u.id)} · ${esc(u.email)}</span></div><button class="btn ghost sm dng" onclick="keluarkanModal(${i})">Keluarkan</button></div>
   <div class="mh-tabs">${tb('a', 'Absen', r.hadir, r.n)}${tb('t', 'Tugas', r.tD, r.tN)}${tb('q', 'Quiz', r.qD, r.qN)}</div>${tab ? `<div class="mh-panel">${mhList(k, r.p, tab)}</div>` : ''}</div>`;
 }
@@ -1166,12 +1166,12 @@ function keluarkanModal(i) {
   modal(`<h3>Keluarkan “${esc(u.nama)}” dari kelas ${esc(k.nama)}?</h3><div class="warnbox" ${merah}>Data belajar partisipan ini di pelajaran akan <b>dihapus</b> dan tidak bisa dikembalikan.</div>
   <ul class="dampak"><li>${nA} catatan absen, ${nT} tugas yang sudah dikirim beserta nilainya, dan ${nQ} hasil quiz ikut terhapus.</li>
   <li>Partisipan bisa bergabung lagi dengan kode kelas <b>${esc(k.kode)}</b>, tetapi data lama tidak kembali.</li></ul>
-  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarkanMhs()">Ya, keluarkan</button></div>`);
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarkanPartisipan()">Ya, keluarkan</button></div>`);
 }
-function keluarkanMhs() {
+function keluarkanPartisipan() {
   const c = ctxKelas(); if (!c || !KEL) return; const { m, k } = c, u = studentsOf(m.id, k.id).find(q => q.email === KEL);
   if (!u) { KEL = ''; tutupModal(); return; }
-  st.setJn(st.jn().filter(j => !(j.mkId === m.id && j.mhs === u.email)));
+  st.setJn(st.jn().filter(j => !(j.pelajaranId === m.id && j.partisipan === u.email)));
   const pr = st.pr(); if (pr[m.id]) delete pr[m.id][u.email]; st.setPr(pr);
   KEL = ''; tutupModal(); render(); toast(u.nama + ' dikeluarkan dari kelas');
 }
@@ -1250,9 +1250,9 @@ function gabungBelum(list) {
   return Object.values(g).sort((a, b) => a.x.n - b.x.n || a.u.nama.localeCompare(b.u.nama));
 }
 function perluDinilaiModal() {
-  if (!isDosen) return;
+  if (!isPengajar) return;
   const list = [];
-  st.mk().filter(m => m.dosen === U.email).forEach(m => m.kelas.forEach(k => {
+  st.pelajaran().filter(m => m.pengajar === U.email).forEach(m => m.kelas.forEach(k => {
     const n = kumpulItems(m, k, studentsOf(m.id, k.id)).filter(i => i.gr && !i.nl).length;
     if (n) list.push({ m, k, n });
   }));
@@ -1260,9 +1260,9 @@ function perluDinilaiModal() {
   const row = r => `<div class="pt-row"><div class="pt-who" style="flex:1 1 auto"><b style="font-size:18px;font-weight:800;color:var(--tx);line-height:1.25">${esc(r.m.nama)}</b><span style="color:#4a6356;font-weight:700;font-size:13px;margin-top:2px">Kelas ${esc(r.k.nama)}</span></div><span class="chip c-iz">${r.n} perlu dinilai</span><button class="btn lime sm" onclick="nilaiDariBeranda('${esc(r.m.id)}','${esc(r.k.id)}')">Berikan penilaian</button></div>`;
   modal(`<h3>Menunggu penilaian</h3><div class="quote">Tugas dan quiz dari partisipan yang belum kamu nilai.</div><div style="margin-top:12px">${list.map(row).join('') || '<div class="pt-empty">Tidak ada tugas atau quiz yang menunggu penilaian 🎉</div>'}</div><div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Tutup</button></div>`);
 }
-function nilaiDariBeranda(mkId, kid) {
+function nilaiDariBeranda(pelajaranId, kid) {
   tutupModal();
-  S.view = 'pert'; S.cid = mkId; S.kid = kid; S.edit = null; S.pfKey = null; S.delMode = false;
+  S.view = 'pert'; S.cid = pelajaranId; S.kid = kid; S.edit = null; S.pfKey = null; S.delMode = false;
   S.pTab = 'pengumpulan'; S.kTab = 'belum'; S.kJ = ''; S.kN = ''; S.kQ = ''; S.kLim = KPAGE;
   render(); window.scrollTo(0, 0);
 }
@@ -1358,7 +1358,7 @@ function kmpN(v) { S.kN = v; S.kLim = KPAGE; kmpApply(); }
 function kmpJ(v) { S.kJ = v; S.kLim = KPAGE; kmpApply(); }
 function kmpMore() { S.kLim = (S.kLim || KPAGE) + KPAGE; kmpApply(); }
 function pilihAbsen(n) { S.absN = n; render(); }
-function setAbsenMhs(n, i, v) {
+function setAbsenPartisipan(n, i, v) {
   const c = ctxKelas(); if (!c) return; const { m, k } = c, u = studentsOf(m.id, k.id)[i]; if (!u) return;
   const p = P(m.id, u.email); if (v) p.att[n] = v; else delete p.att[n]; setP(m.id, u.email, p);
   toast(`${u.nama}: ${{ H: 'Hadir', I: 'Izin', A: 'Alpa' }[v] || 'Belum diabsen'}`); render();
@@ -1372,7 +1372,7 @@ function absenTab(m, k, ss) {
   if (!ss.length) return pick + '<p class="empty" style="margin-top:12px">Belum ada partisipan yang bergabung.</p>';
   const opt = [['', 'Belum diabsen'], ['H', 'Hadir'], ['I', 'Izin'], ['A', 'Alpa']], cls = { H: 'c-ok', I: 'c-iz', A: 'c-no' }, nm = { H: 'Hadir', I: 'Izin', A: 'Alpa' };
   const all = ss.map((u, i) => ({ u, i, cur: P(m.id, u.email).att[n] || '' }));
-  const row = r => `<div class="pt-row"><div class="pt-who"><b>${esc(r.u.nama)}</b><span>${esc(r.u.id)}</span></div>${r.cur ? `<span class="chip ${cls[r.cur]}">${nm[r.cur]}</span>` : ''}<select class="pt-sel" onchange="setAbsenMhs(${n},${r.i},this.value)" aria-label="Absensi ${esc(r.u.nama)}">${opt.map(([v, l]) => `<option value="${v}"${r.cur === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
+  const row = r => `<div class="pt-row"><div class="pt-who"><b>${esc(r.u.nama)}</b><span>${esc(r.u.id)}</span></div>${r.cur ? `<span class="chip ${cls[r.cur]}">${nm[r.cur]}</span>` : ''}<select class="pt-sel" onchange="setAbsenPartisipan(${n},${r.i},this.value)" aria-label="Absensi ${esc(r.u.nama)}">${opt.map(([v, l]) => `<option value="${v}"${r.cur === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`;
   const belum = all.filter(r => !r.cur), sudah = all.filter(r => r.cur);
   return pick + `<h2>Partisipan yang belum absen (${belum.length})</h2>${belum.map(row).join('') || '<div class="pt-empty">Semua partisipan sudah absen 🎉</div>'}<h2>Partisipan yang sudah absen (${sudah.length})</h2>${sudah.map(row).join('') || '<div class="pt-empty">Belum ada partisipan yang absen.</div>'}`;
 }
@@ -1469,7 +1469,7 @@ async function savePert0() {
   const absen = { dur, start: old && old.absen && !reopen ? old.absen.start : Date.now() };
   const data = { topik, tugas, tugasLamp, tugasDl, quiz: qz, quizLamp, quizDl, materi, materiDesc, quizDesc, absen };
   if (old) { Object.assign(old, data); delete old.tugasFile; } else k.pert.push({ n: k.pert.length + 1, ...data });
-  if (!saveMk(m)) return fail('Gagal menyimpan data.');
+  if (!savePelajaran(m)) return fail('Gagal menyimpan data.');
   const msg = old ? 'Pertemuan ' + old.n + ' diperbarui' : 'Pertemuan ' + k.pert.length + ' ditambahkan';
   S.edit = null; S.pfKey = null; S.pf = null; render(); toast(msg);
 }
@@ -1527,7 +1527,7 @@ function hapusBanyak() {
   const sel = (S.delSel || []).filter(n => k.pert.some(x => x.n === n)).sort((a, b) => b - a);
   if (!sel.length) { tutupModal(); return; }
   const a = st.pr(); sel.forEach(n => hapusPertCore(m, k, a, n));
-  saveMk(m); st.setPr(a);
+  savePelajaran(m); st.setPr(a);
   Object.keys(S.open).forEach(key => { if (key.startsWith(m.id + '-')) delete S.open[key]; });
   S.delMode = false; S.selMode = false; S.delSel = []; S.edit = null; S.pfKey = null; tutupModal(); render(); toast(sel.length + ' pertemuan dihapus');
 }
@@ -1556,7 +1556,7 @@ function hapusPert(n) {
   const c = ctxKelas(); if (!c) return; const { m, k } = c;
   if (!k.pert.some(x => x.n === n)) { tutupModal(); return; }
   const a = st.pr(); hapusPertCore(m, k, a, n);
-  saveMk(m); st.setPr(a);
+  savePelajaran(m); st.setPr(a);
   Object.keys(S.open).forEach(key => { if (key.startsWith(m.id + '-')) delete S.open[key]; });
   S.delMode = false; S.selMode = false; S.delSel = []; S.edit = null; S.pfKey = null; tutupModal(); render(); toast('Pertemuan ' + n + ' dihapus');
 }
@@ -1692,16 +1692,16 @@ function saveAbsen(n) {
   tutupModal(); toast('Absensi disimpan'); render();
 }
 
-function mkModal(id) {
-  const m = id ? getMk(id) : null;
-  if (id && (!m || m.dosen !== U.email)) return;
+function pelajaranModal(id) {
+  const m = id ? getPelajaran(id) : null;
+  if (id && (!m || m.pengajar !== U.email)) return;
   modal(`<h3>${m ? 'Ubah pelajaran' : 'Buat pelajaran'}</h3><div class="quote">${m ? 'Perubahan langsung terlihat oleh partisipan di kelasmu.' : 'Setelah dibuat, kamu bisa membuat kelas A, B, C… beserta kodenya.'}</div>
   <div class="fg" style="margin-top:12px"><label class="f">Nama pelajaran<input id="mNama" placeholder="Pemrograman Berorientasi Objek" maxlength="60" value="${m ? esc(m.nama) : ''}"></label>
   <label class="f">ID pelajaran (opsional)<input id="mKode" placeholder="mis. PLJ-01" maxlength="12" value="${m ? esc(m.kode || '') : ''}"></label>
   ${jadwalField(m)}
-  ${m !== undefined && isDosen ? warnaField(m) : ''}
+  ${m !== undefined && isPengajar ? warnaField(m) : ''}
   <p class="err" id="mErr" role="alert"></p>
-  <div class="row"><button class="btn lime" onclick="createMk(${m ? `'${m.id}'` : ''})">${m ? 'Simpan perubahan' : 'Buat pelajaran'}</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
+  <div class="row"><button class="btn lime" onclick="createPelajaran(${m ? `'${m.id}'` : ''})">${m ? 'Simpan perubahan' : 'Buat pelajaran'}</button><button class="btn ghost" onclick="tutupModal()">Batal</button></div></div>`);
   if ($('#mClr')) warnaSet($('#mClr').dataset.v);
   $('#mNama').focus();
 }
@@ -1747,41 +1747,41 @@ function warnaField(m) {
 }
 function warnaSet(c) {
   const box = $('#mClr'); if (!box) return;
-  const w = mkWarna(c); box.dataset.v = w.c;
+  const w = pelajaranWarna(c); box.dataset.v = w.c;
   const pv = $('#mPv'); pv.style.cssText = w.st; pv.className = 'clr-pv' + w.cls;
   box.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === w.c));
   const inp = $('#mWarna'); if (w.c && inp.value !== w.c) inp.value = w.c;
   box.querySelector('.clr-any').classList.toggle('on', !!w.c && !WARNA.some(x => x[0] === w.c));
 }
-function createMk(id) {
-  const nama = $('#mNama').value.trim(), e = $('#mErr'), old = id ? getMk(id) : null;
-  if (id && (!old || old.dosen !== U.email)) return;
+function createPelajaran(id) {
+  const nama = $('#mNama').value.trim(), e = $('#mErr'), old = id ? getPelajaran(id) : null;
+  if (id && (!old || old.pengajar !== U.email)) return;
   if (!nama) { e.textContent = 'Nama pelajaran wajib diisi.'; return; }
-  if (st.mk().some(m => m.dosen === U.email && m.id !== id && m.nama.toLowerCase() === nama.toLowerCase())) { e.textContent = 'Kamu sudah punya pelajaran dengan nama ini.'; return; }
+  if (st.pelajaran().some(m => m.pengajar === U.email && m.id !== id && m.nama.toLowerCase() === nama.toLowerCase())) { e.textContent = 'Kamu sudah punya pelajaran dengan nama ini.'; return; }
   const jb = jbRead(); if (jb.err) { e.textContent = jb.err; return; }
   const data = { nama, kode: $('#mKode').value.trim(), jadwal: jb.text };
   const warna = $('#mClr') ? hexOk($('#mClr').dataset.v) : '';
   if (warna) data.warna = warna;
   if (old) {
     Object.assign(old, data); if (!warna) delete old.warna;
-    if (!saveMk(old)) { e.textContent = 'Gagal menyimpan data.'; return; }
+    if (!savePelajaran(old)) { e.textContent = 'Gagal menyimpan data.'; return; }
     tutupModal(); toast('Pelajaran diperbarui'); render(); return;
   }
-  const m = { id: uid('mk'), ...data, dosen: U.email, dosenNama: U.nama, ...(fotoOk(prefOf(U).foto) ? { dosenFoto: prefOf(U).foto } : {}), kelas: [] };
-  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  const m = { id: uid('pl'), ...data, pengajar: U.email, pengajarNama: U.nama, ...(fotoOk(prefOf(U).foto) ? { pengajarFoto: prefOf(U).foto } : {}), kelas: [] };
+  if (!savePelajaran(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   tutupModal(); toast('Pelajaran dibuat. Sekarang buat kelasnya.'); go('course', m.id);
 }
 const merah = 'style="border-color:#e8a0a0;background:#fdeaea"';
-function hapusMkModal(id) {
-  const m = getMk(id); if (!m || m.dosen !== U.email) return;
+function hapusPelajaranModal(id) {
+  const m = getPelajaran(id); if (!m || m.pengajar !== U.email) return;
   modal(`<h3>⚠️ Hapus pelajaran “${esc(m.nama)}”?</h3><div class="warnbox" ${merah}>Tindakan ini <b>tidak bisa dibatalkan</b>.</div>
   <ul class="dampak"><li><b>${m.kelas.length} kelas</b> dan <b>${totalPert(m)} pertemuan</b> (materi, tugas, quiz) ikut terhapus.</li>
   <li><b>${studentsOf(m.id).length} partisipan</b> keluar dari pelajaran ini dan kehilangan absen, tugas yang dikirim, nilai, dan hasil quiz mereka.</li></ul>
-  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusMk('${m.id}')">Ya, hapus pelajaran</button></div>`);
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="hapusPelajaran('${m.id}')">Ya, hapus pelajaran</button></div>`);
 }
-function hapusMk(id) {
-  const m = getMk(id); if (!m || m.dosen !== U.email) return;
-  st.setMk(st.mk().filter(x => x.id !== id)); st.setJn(st.jn().filter(j => j.mkId !== id));
+function hapusPelajaran(id) {
+  const m = getPelajaran(id); if (!m || m.pengajar !== U.email) return;
+  st.setPelajaran(st.pelajaran().filter(x => x.id !== id)); st.setJn(st.jn().filter(j => j.pelajaranId !== id));
   const pr = st.pr(); delete pr[id]; st.setPr(pr);
   tutupModal(); toast('Pelajaran dihapus'); go('courses');
 }
@@ -1804,7 +1804,7 @@ async function simpanKelas() {
   if (total < k.pert.length) { e.textContent = 'Kelas ini sudah punya ' + k.pert.length + ' pertemuan. Hapus pertemuan dulu jika ingin menguranginya.'; return; }
   if (await kodeDipakai(kode, k.id, e)) return;
   k.nama = nama; k.kode = kode; k.total = total;
-  if (!saveMk(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
+  if (!savePelajaran(m)) { e.textContent = 'Gagal menyimpan data.'; return; }
   tutupModal(); toast('Kelas diperbarui'); render();
 }
 function hapusKelasModal() {
@@ -1817,24 +1817,24 @@ function hapusKelasModal() {
 }
 function hapusKelas() {
   const c = ctxKelas(); if (!c) return; const { m, k } = c, ss = studentsOf(m.id, k.id);
-  m.kelas = m.kelas.filter(x => x.id !== k.id); saveMk(m);
-  st.setJn(st.jn().filter(j => !(j.mkId === m.id && j.kelasId === k.id)));
+  m.kelas = m.kelas.filter(x => x.id !== k.id); savePelajaran(m);
+  st.setJn(st.jn().filter(j => !(j.pelajaranId === m.id && j.kelasId === k.id)));
   const pr = st.pr(); ss.forEach(u => { if (pr[m.id]) delete pr[m.id][u.email]; }); st.setPr(pr);
   tutupModal(); toast('Kelas dihapus'); go('course', m.id);
 }
-function keluarModal(mkId) {
-  const m = getMk(mkId); if (!m || !myMk().some(x => x.id === mkId)) return;
-  const p = P(mkId, U.email), nA = Object.keys(p.att).length, nT = Object.keys(p.sub).length, nQ = Object.keys(p.quiz).length;
+function keluarModal(pelajaranId) {
+  const m = getPelajaran(pelajaranId); if (!m || !myPelajaran().some(x => x.id === pelajaranId)) return;
+  const p = P(pelajaranId, U.email), nA = Object.keys(p.att).length, nT = Object.keys(p.sub).length, nQ = Object.keys(p.quiz).length;
   modal(`<h3>Keluar dari “${esc(m.nama)}”?</h3><div class="warnbox" ${merah}>Data belajarmu di pelajaran ini akan <b>dihapus</b>.</div>
   <ul class="dampak"><li>${nA} catatan absen, ${nT} tugas yang sudah dikirim, nilai, dan ${nQ} hasil quiz-mu ikut terhapus.</li>
   <li>Kamu bisa bergabung lagi dengan kode kelas dari pengajar, tetapi data lama tidak kembali.</li></ul>
-  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarMk('${m.id}')">Ya, keluar dari pelajaran</button></div>`);
+  <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="tutupModal()">Batal</button><button class="btn red" onclick="keluarPelajaran('${m.id}')">Ya, keluar dari pelajaran</button></div>`);
 }
-function keluarMk(mkId) {
-  if (!myMk().some(x => x.id === mkId)) return;
-  st.setJn(st.jn().filter(j => !(j.mhs === U.email && j.mkId === mkId)));
-  const pr = st.pr(); if (pr[mkId]) delete pr[mkId][U.email]; st.setPr(pr);
-  Object.keys(S.draft).forEach(k => { if (k.startsWith(mkId + '-')) delete S.draft[k]; });
+function keluarPelajaran(pelajaranId) {
+  if (!myPelajaran().some(x => x.id === pelajaranId)) return;
+  st.setJn(st.jn().filter(j => !(j.partisipan === U.email && j.pelajaranId === pelajaranId)));
+  const pr = st.pr(); if (pr[pelajaranId]) delete pr[pelajaranId][U.email]; st.setPr(pr);
+  Object.keys(S.draft).forEach(k => { if (k.startsWith(pelajaranId + '-')) delete S.draft[k]; });
   tutupModal(); toast('Kamu sudah keluar dari pelajaran'); go('courses');
 }
 function joinModal() {
@@ -1882,9 +1882,9 @@ function pgAbsen(x, p) {
   return ['wait', 'Belum diabsen'];
 }
 function progress() {
-  const L = myMk();
-  if (!L.length) return '<h1>Progres belajar</h1>' + empty('📈', 'Belum ada progres', isDosen ? 'Progres kelas muncul setelah kamu membuat kelas dan partisipan bergabung.' : 'Progres muncul setelah kamu bergabung ke kelas.', isDosen ? btnMk : btnJoin);
-  return isDosen ? progressD(L) : progressM(L);
+  const L = myPelajaran();
+  if (!L.length) return '<h1>Progres belajar</h1>' + empty('📈', 'Belum ada progres', isPengajar ? 'Progres kelas muncul setelah kamu membuat kelas dan partisipan bergabung.' : 'Progres muncul setelah kamu bergabung ke kelas.', isPengajar ? btnPelajaran : btnJoin);
+  return isPengajar ? progressD(L) : progressM(L);
 }
 function progressM(L) {
   const rows = L.map(m => ({ m, k: kelasOf(m, U.email), s: stats(m, U.email), pt: pertOf(m, U.email), p: P(m.id, U.email) }));
@@ -1909,7 +1909,7 @@ function progressM(L) {
       const qz = adaQuiz(x) ? (quizDone(p, x) ? chip('bl', 'Quiz selesai') : chip('wait', 'Quiz belum')) : '';
       return `<button type="button" class="prg-row" onclick="bukaItem('${m.id}',${x.n})"><span class="prg-n">${x.n}</span><span class="prg-t">${esc(x.topik)}</span><span class="prg-cs">${chip(ac === 'live' ? 'ok' : ac, al)}${tg}${qz}</span></button>`;
     }).join('') || '<div class="prg-empty">Belum ada pertemuan di pelajaran ini.</div>';
-    return `<div class="prg-card prg-rise${open ? ' open' : ''}" style="--i:${idx}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-ic" style="background:${d.col}">${mkIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${esc(m.dosenNama)}${s.held ? ` · Pertemuan ${s.held}/${tot}` : ''}</small></span>${pgRing(cp, '', 64)}<span class="prg-chev" aria-hidden="true">▾</span></button>
+    return `<div class="prg-card prg-rise${open ? ' open' : ''}" style="--i:${idx}" data-pg="${key}"><button type="button" class="prg-top" aria-expanded="${open}" onclick="pgTog('${key}')"><span class="prg-ic" style="background:${d.col}">${pelajaranIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${esc(m.pengajarNama)}${s.held ? ` · Pertemuan ${s.held}/${tot}` : ''}</small></span>${pgRing(cp, '', 64)}<span class="prg-chev" aria-hidden="true">▾</span></button>
       <div class="prg-ms">${pgMeter('🗓️', 'Kehadiran', `${s.hadir}/${s.held} · ${ap}%`, ap, 'ab')}${pgMeter('📝', 'Tugas & quiz selesai', `${s.done}/${s.tasks} · ${tp}%`, tp, 'tg')}</div>
       <div class="prg-dots" aria-label="Pertemuan">${dots || '<span class="prg-empty">Belum ada pertemuan.</span>'}</div>
       <div class="prg-det"><div class="prg-in"><div class="prg-leg"><span><i class="ok"></i>Hadir</span><span><i class="no"></i>Terlewat/Alpa</span><span><i class="iz"></i>Izin</span><span><i class="wait"></i>Belum</span></div>${detail}<div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="go('course','${m.id}')">Buka pelajaran →</button></div></div></div></div>`;
@@ -1933,7 +1933,7 @@ function progressD(L) {
         <div class="prg-det"><div class="prg-in"><div class="prg-plist">${plist}</div><div class="row" style="margin-top:12px"><button class="btn lime sm" onclick="bukaKelasDari('${m.id}','${k.id}')">Buka kelas →</button></div></div></div></div>`;
     }).join('') || '<div class="prg-empty">Belum ada kelas di pelajaran ini.</div>';
     G.h += M.h; G.hd += M.hd; G.d += M.d; G.t += M.t; G.n += M.n; G.low = (G.low || 0) + (M.low || 0);
-    return `<div class="prg-card prg-rise" style="--i:${idx}"><div class="prg-top static"><span class="prg-ic" style="background:${d.col}">${mkIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${m.kelas.length} kelas · ${M.n} partisipan</small></span>${pgRing(cmb(M), '', 64)}</div>${krows}</div>`;
+    return `<div class="prg-card prg-rise" style="--i:${idx}"><div class="prg-top static"><span class="prg-ic" style="background:${d.col}">${pelajaranIc(m, d)}</span><span class="prg-nm"><b>${esc(m.nama)}</b><small>${m.kelas.length} kelas · ${M.n} partisipan</small></span>${pgRing(cmb(M), '', 64)}</div>${krows}</div>`;
   }).join('');
   const all = cmb(G), has = G.hd > 0 || G.t > 0, [lic, ltl, lsub] = pgLevel(all, has);
   const chips = `<span class="prg-chip">🎒 ${G.n} partisipan</span><span class="prg-chip">🗓️ Rata-rata hadir ${pgPct(G.h, G.hd)}%</span><span class="prg-chip">📝 Tugas/quiz ${pgPct(G.d, G.t)}%</span>${G.low ? `<span class="prg-chip alert">⚠️ ${G.low} perlu perhatian</span>` : (has ? '<span class="prg-chip ok">✅ Semua partisipan baik</span>' : '')}`;
@@ -1991,7 +1991,7 @@ const ST_FAQ = {
   ]
 };
 function stChecks() {
-  const pf = prefOf(U), rem = isDosen ? pf.nl !== false : (pf.ab !== false || pf.dl !== false || pf.jd !== false);
+  const pf = prefOf(U), rem = isPengajar ? pf.nl !== false : (pf.ab !== false || pf.dl !== false || pf.jd !== false);
   return [
     { ok: !!U.verified, t: 'Gmail terverifikasi', act: "go('profil')" },
     { ok: !!pf.tour, t: 'Panduan sudah dilihat', act: 'startTour()' },
@@ -2003,7 +2003,7 @@ function stScoreHtml() {
   return `${pgRing(pct, 'siap', 112)}<div class="sx-chk">${c.map(x => `<button type="button" class="sx-ck${x.ok ? ' ok' : ''}" onclick="${x.act}"><i aria-hidden="true">${x.ok ? sxi('check') : ''}</i><span>${x.t}</span></button>`).join('')}</div>`;
 }
 function sxSample(pf) {
-  if (isDosen) return pf.nl !== false ? '<span class="sx-chip warn">3 tugas menunggu penilaian</span>' : '<span class="sx-chip off">Pengingat dimatikan</span>';
+  if (isPengajar) return pf.nl !== false ? '<span class="sx-chip warn">3 tugas menunggu penilaian</span>' : '<span class="sx-chip off">Pengingat dimatikan</span>';
   const c = [];
   if (pf.ab !== false) c.push('<span class="sx-chip live">Absen sedang dibuka</span>');
   if (pf.dl !== false) c.push(`<span class="sx-chip warn">Batas tugas dalam ${pf.dh || 72} jam</span>`);
@@ -2060,15 +2060,15 @@ function stReset() {
   applyPref(); tutupModal(); render(); toast('Pengaturan dikembalikan ke awal');
 }
 function settings() {
-  const pf = prefOf(U), isD = isDosen, L = myMk(), tab = S.sxTab || 'tampilan';
+  const pf = prefOf(U), isD = isPengajar, L = myPelajaran(), tab = S.sxTab || 'tampilan';
   const seg = (k, opts, cur, aa) => { const i = Math.max(0, opts.findIndex(o => String(o[0]) === String(cur))); return `<div class="sx-seg" data-k="${k}" style="--n:${opts.length};--idx:${i}" role="group"><i class="th" aria-hidden="true"></i>${opts.map(([v, l, s]) => `<button type="button" class="${String(v) === String(cur) ? 'on' : ''}" data-v="${v}" aria-pressed="${String(v) === String(cur)}" onclick="stSet('${k}',${typeof v === 'number' ? v : `'${v}'`})">${aa ? `<span style="font-size:${s}px">Aa</span>` : ''}${l}</button>`).join('')}</div>`; };
   const sw = (ic, k, t, d, on) => `<label class="sx-row"><span class="sx-ic">${sxi(ic)}</span><span class="sx-tx"><b>${t}</b><small>${d}</small></span><span class="sx-sw"><input type="checkbox" role="switch" ${on ? 'checked' : ''} onchange="stSet('${k}',this.checked)" aria-label="${t}"><i aria-hidden="true"></i></span></label>`;
   const kv = (ic, l, v) => `<div class="sx-kv"><span class="sx-ic">${sxi(ic)}</span><span class="sx-kl">${l}</span><span class="sx-kvv">${v}</span></div>`;
   let tiles;
   if (isD) {
-    const kls = L.reduce((a, m) => a + m.kelas.length, 0), prt = L.reduce((a, m) => a + totalPert(m), 0), mhsU = new Set();
-    L.forEach(m => m.kelas.forEach(k => studentsOf(m.id, k.id).forEach(u => mhsU.add(u.email))));
-    tiles = [['Pelajaran', L.length], ['Kelas', kls], ['Partisipan', mhsU.size], ['Pertemuan dibuat', prt]];
+    const kls = L.reduce((a, m) => a + m.kelas.length, 0), prt = L.reduce((a, m) => a + totalPert(m), 0), partisipanU = new Set();
+    L.forEach(m => m.kelas.forEach(k => studentsOf(m.id, k.id).forEach(u => partisipanU.add(u.email))));
+    tiles = [['Pelajaran', L.length], ['Kelas', kls], ['Partisipan', partisipanU.size], ['Pertemuan dibuat', prt]];
   } else {
     const T = L.reduce((a, m) => { const s = stats(m, U.email); return { h: a.h + s.hadir, hd: a.hd + s.held, d: a.d + s.done }; }, { h: 0, hd: 0, d: 0 });
     tiles = [['Pelajaran diikuti', L.length], ['Pertemuan dihadiri', T.h], ['Tugas & quiz selesai', T.d], ['Total pertemuan', T.hd]];
@@ -2125,7 +2125,7 @@ function settings() {
 const TOUR = { on: false, i: 0, steps: [], raf: 0, key: '', prev: null, v0: null };
 const TR_BAR = 92;
 function tourSteps() {
-  const nm = esc((U.nama || '').split(' ')[0] || 'kamu'), N = i => `#nav button:nth-child(${i})`, d = isDosen;
+  const nm = esc((U.nama || '').split(' ')[0] || 'kamu'), N = i => `#nav button:nth-child(${i})`, d = isPengajar;
   return [
     { h: `Selamat datang, ${nm}! 😉`, p: `Karena kamu orang baru di sini, ini adalah tutorial yang menyorot dan menjelaskan cara memakainya sebagai ${d ? 'pengajar' : 'partisipan'}.` },
     { v: 'home', t: N(1), h: 'Beranda', p: d ? 'Berisi ringkasan pertemuan dalam pelajaran termasuk pengingat jumlah tugas yang belum dinilai.' : 'Lihat pengingat absen yang sedang dibuka, tugas, atau quiz yang segera berakhir serta progres belajarmu.' },
@@ -2133,7 +2133,7 @@ function tourSteps() {
       ? ['<b>Buat pelajaran</b> lalu di dalam pelajaran yang sudah dibuat bisa membuat kelasnya, contoh A, B, C', 'Bagikan kode kelas ke partisipan agar mereka bisa bergabung', 'Pelajaran dan kelas yang sudah dibuat bisa dihapus permanen dan progres yang ada di dalamnya tidak dapat dikembalikan lagi, <b>maka berhati-hatilah</b> dan pastikan pilihan Anda sudah benar']
       : ['Tekan masuk kelas lalu masukkan kode kelas dari pengajarmu', 'Setelah bergabung pelajaran akan muncul di sini lengkap dengan absen, materi, tugas, dan quiz jika pengajarmu membuat pertemuan baru'] },
     d ? { v: 'courses', h: 'Setelah kelas berhasil dibuat', p: 'Buka kelas dan tekan info selengkapnya lalu atur pertemuan, ada beberapa fitur di dalamnya seperti:', l: ['<b>Tambah pertemuan</b>: jika di dalam pertemuan ada materi, tugas, atau quiz maka centang opsinya dan berikan maksimal 5 file atau link', '<b>Pengumpulan</b>: file yang sudah dikumpulkan oleh partisipan dapat dilihat langsung tanpa mengunduhnya dan pengajar bisa memberikan nilai, catatan, atau mengembalikan file yang sudah dikumpulkan partisipan jika terdapat kesalahan', '<b>Absensi</b>: status kehadiran partisipan bisa diubah kapan saja'] }
-      : { v: 'courses', h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen</b>: tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu', '<b>Materi</b>: lihat materi yang dibuat dosenmu tanpa mengunduh atau bisa diunduh', '<b>Tugas</b>: tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas dan jika dosen mengembalikan tugasmu perbaiki tugasnya dan kirim ulang tugas tersebut', '<b>Quiz</b>: quiz berupa link atau file, jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan', '<span class="tr-red">Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.</span>'] },
+      : { v: 'courses', h: 'Di dalam pelajaran', p: 'Buka pelajaranmu, lalu pilih pertemuan untuk:', l: ['<b>Absen</b>: tekan absen jika pengajarmu membuat pertemuan baru, jika waktu absen sudah habis minta pengajar mengabsenmu', '<b>Materi</b>: lihat materi yang dibuat pengajarmu tanpa mengunduh atau bisa diunduh', '<b>Tugas</b>: tambahkan file atau link maksimal 5, jika ada yang salah hapus saja lalu tekan kirim tugas dan jika pengajar mengembalikan tugasmu perbaiki tugasnya dan kirim ulang tugas tersebut', '<b>Quiz</b>: quiz berupa link atau file, jika quiz berupa link dan sudah selesai maka tekan tandai selesai, atau jika berupa file dan instruksi maka kamu bisa mengirimkan file quiz yang sudah kamu kerjakan', '<span class="tr-red">Keluar dari pelajaran akan menghapus absen, tugas, dan nilaimu di pelajaran itu.</span>'] },
     { v: 'progress', t: N(3), h: 'Progres', p: d ? 'Lihat semua persentase kehadiran partisipan, penyelesaian tugas, dan quiz di tiap kelas' : 'Lihat semua persentase kehadiran dan tugas di setiap pelajaran' },
     { v: 'notif', t: N(4), h: 'Notifikasi', p: d ? 'Semua kejadian penting muncul di sini: partisipan yang bergabung, tugas dan quiz yang masuk, absen, serta perubahan akunmu. Bisa diurutkan dari yang terbaru atau terlama.' : 'Semua kejadian penting muncul di sini: berhasil bergabung, tugas, quiz, absen, nilai dari pengajar, serta perubahan akunmu. Bisa diurutkan dari yang terbaru atau terlama.' },
     { v: 'settings', t: N(5), h: 'Pengaturan', p: 'Ubah ukuran teks dan terapkan pengingat, lihat data akunmu atau ulangi panduan ini kapan saja' },
@@ -2275,7 +2275,7 @@ function notifFilter(f) { S.nFilter = f; render(); }
 function notifGo(t) {
   const [k, a, b] = String(t || '').split(':');
   if (!k) { render(); return; }
-  if ((k === 'mk' || k === 'item') && a && myMk().some(m => m.id === a)) {
+  if ((k === 'pelajaran' || k === 'item') && a && myPelajaran().some(m => m.id === a)) {
     if (k === 'item' && Number(b) > 0) { bukaItem(a, Number(b)); return; }
     S.view = 'course'; S.cid = a; render(); window.scrollTo(0, 0); return;
   }
@@ -2340,15 +2340,15 @@ function slugMap(list, label, extra) {
   });
   return out;
 }
-const mkSlugs = () => slugMap(myMk(), m => m.nama, m => m.kode);
+const pelajaranSlugs = () => slugMap(myPelajaran(), m => m.nama, m => m.kode);
 const klSlugs = m => slugMap(m.kelas, k => k.nama, k => k.kode);
 const SX_TABS = ['tampilan', 'pengingat', 'akun', 'bantuan'], PT_TABS = ['pertemuan', 'pengumpulan', 'absensi'];
 function routeOf() {
   const v = S.view;
   if (v === 'home') return '/beranda'; if (v === 'courses') return '/pelajaran'; if (v === 'progress') return '/progres'; if (v === 'jadwal') return '/jadwal'; if (v === 'notif') return '/notifikasi';
   if (v === 'settings') { const t = SX_TABS.includes(S.sxTab) ? S.sxTab : 'tampilan'; return t === 'tampilan' ? '/pengaturan' : '/pengaturan/' + t; }
-  const m = myMk().find(x => x.id === S.cid); if (!m) return '/pelajaran';
-  let r = '/pelajaran/' + mkSlugs()[m.id]; if (v === 'course') return r;
+  const m = myPelajaran().find(x => x.id === S.cid); if (!m) return '/pelajaran';
+  let r = '/pelajaran/' + pelajaranSlugs()[m.id]; if (v === 'course') return r;
   const k = m.kelas.find(x => x.id === S.kid); if (!k) return r;
   r += '/' + klSlugs(m)[k.id]; return v === 'kelas' ? r : r + '/' + (PT_TABS.includes(S.pTab) ? S.pTab : 'pertemuan');
 }
@@ -2357,10 +2357,10 @@ function applyRoute(path) {
   const first = seg[0] || 'beranda';
   const set = (v, o) => Object.assign(S, { view: v, edit: null, pfKey: null, delMode: false }, o || {});
   if (first === 'pelajaran' || first === 'courses') {
-    const m = seg[1] ? myMk().find(x => mkSlugs()[x.id] === seg[1]) : null;
+    const m = seg[1] ? myPelajaran().find(x => pelajaranSlugs()[x.id] === seg[1]) : null;
     if (!m) return set('courses');
     if (!seg[2]) return set('course', { cid: m.id });
-    const k = isDosen ? m.kelas.find(x => klSlugs(m)[x.id] === seg[2]) : null;
+    const k = isPengajar ? m.kelas.find(x => klSlugs(m)[x.id] === seg[2]) : null;
     if (!k) return set('course', { cid: m.id });
     if (!seg[3]) return set('kelas', { cid: m.id, kid: k.id });
     return set('pert', { cid: m.id, kid: k.id, pTab: PT_TABS.includes(seg[3]) ? seg[3] : 'pertemuan' });
@@ -2374,7 +2374,7 @@ function applyRoute(path) {
 const curRoute = () => (HIST ? location.pathname : (location.hash.slice(1).startsWith('/') ? location.hash.slice(1) : '')).replace(/\/+$/, '') || '/';
 let ROUTE_REPLACE = true;
 function syncUrl() {
-  const r = routeOf(), v = S.view, m = myMk().find(x => x.id === S.cid);
+  const r = routeOf(), v = S.view, m = myPelajaran().find(x => x.id === S.cid);
   const T = { home: 'Beranda', courses: 'Pelajaran', progress: 'Progres', jadwal: 'Jadwal', notif: 'Notifikasi', settings: 'Pengaturan' };
   document.title = (T[v] || (m ? m.nama : 'Pelajaran')) + ' · KelasBelajar';
   const ganti = ROUTE_REPLACE; ROUTE_REPLACE = false;
@@ -2418,7 +2418,7 @@ function initBeranda() {
     let habis = false;
     document.querySelectorAll('[data-exp]').forEach(el => {
       const ms = +el.getAttribute('data-exp') - Date.now();
-      if (ms <= 0) { if (isDosen) el.textContent = '00:00'; else habis = true; } else el.textContent = fmt(ms);
+      if (ms <= 0) { if (isPengajar) el.textContent = '00:00'; else habis = true; } else el.textContent = fmt(ms);
     });
     if (habis) render(); else { jdTick(); soonTick(); }
   }, 1000);
@@ -2528,14 +2528,14 @@ $('#fReg').addEventListener('submit', async e => {
   const err = m => { $('#eReg').textContent = m; };
   const d = {
     nama: $('#rNama').value.trim(), email: $('#rEmail').value.trim().toLowerCase(),
-    id: $('#rId').value.trim(), hp: $('#rHp').value.trim(), prodi: $('#rProdi').value.trim(),
+    id: $('#rId').value.trim(), hp: $('#rHp').value.trim(), minat: $('#rMinat').value.trim(),
     role: role()
   };
   const p1 = $('#rPass').value, p2 = $('#rPass2').value;
   if (!d.nama) return err('Nama lengkap wajib diisi.');
   if (!isGmail(d.email)) return err('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return err('ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
-  if (d.prodi.length < 3) return err('Minat belajar wajib diisi (minimal 3 karakter).');
+  if (d.minat.length < 3) return err('Minat belajar wajib diisi (minimal 3 karakter).');
   if (!/^0\d{8,13}$/.test(d.hp)) return err('Nomor HP tidak valid. Contoh: 081234567890.');
   if (p1.length < 8) return err('Kata sandi minimal 8 karakter.');
   if (p1 !== p2) return err('Konfirmasi kata sandi tidak sama.');
@@ -2543,7 +2543,7 @@ $('#fReg').addEventListener('submit', async e => {
   const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; err('');
   const { data, error } = await sb.auth.signUp({
     email: d.email, password: p1,
-    options: { emailRedirectTo: location.origin + '/profil.html', data: { nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, prodi: d.prodi } }
+    options: { emailRedirectTo: location.origin + '/profil.html', data: { nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, minat: d.minat } }
   });
   btn.disabled = false;
   if (error) return err(/registered|exists/i.test(error.message) ? 'Email ini sudah terdaftar. Silakan masuk.' : 'Gagal mendaftar: ' + error.message);
@@ -2561,14 +2561,14 @@ let editing = null, pwOpen = false, timer = null, first = true, pend = '';
 if (!Auth.requireLogin()) return;
 $('#bOut').onclick = () => Auth.logout();
 
-function pfScene(u, nMk) {
+function pfScene(u, nPelajaran) {
   const nm = String(u.nama || '?').trim(), ini = esc(nm.charAt(0).toUpperCase()), foto = fotoOk(u.pref && u.pref.foto);
   const fn = esc(nm.split(/\s+/)[0].replace(/^./, c => c.toUpperCase()));
   const steps = [
     [!!u.verified, 'Gmail terverifikasi', 'Gmail belum terverifikasi', 'shield', ''],
     [!!String(u.hp || '').trim(), 'No. HP tersimpan', 'No. HP belum diisi', 'mail', ''],
     [!!foto, 'Foto profil terpasang', 'Pasang foto profil', 'camera', ' id="liFoto" role="button" tabindex="0"'],
-    [nMk > 0, u.role === 'Pengajar' ? 'Sudah punya pelajaran' : 'Sudah bergabung ke kelas', u.role === 'Pengajar' ? 'Belum punya pelajaran' : 'Belum bergabung ke kelas', 'compass', '']
+    [nPelajaran > 0, u.role === 'Pengajar' ? 'Sudah punya pelajaran' : 'Sudah bergabung ke kelas', u.role === 'Pengajar' ? 'Belum punya pelajaran' : 'Belum bergabung ke kelas', 'compass', '']
   ];
   const done = steps.filter(s => s[0]).length, pct = Math.round(done / steps.length * 100), C = 2 * Math.PI * 50;
   const pesan = done === steps.length ? 'Profilmu sudah lengkap.' : `Tinggal ${steps.length - done} langkah lagi supaya profilmu lengkap.`;
@@ -2614,7 +2614,7 @@ function render() {
           <dt>Nama lengkap</dt><dd>${esc(u.nama)}</dd>
           <dt>Peran</dt><dd>${esc(u.role)}</dd>
           <dt>${idLabel}</dt><dd>${esc(u.id)}</dd>
-          <dt>Minat belajar</dt><dd>${esc(u.prodi)}</dd>
+          <dt>Minat belajar</dt><dd>${esc(u.minat)}</dd>
         </dl>
         <p class="lock">🔒 Nama lengkap, peran, dan minat belajar tidak dapat diubah setelah pendaftaran.</p></div>`;
 
@@ -2644,13 +2644,13 @@ function render() {
       <div class="row"><button class="btn lime" type="submit">Simpan kata sandi</button><button class="btn ghost" type="button" id="bPwBatal">Batal</button></div></form>`
       : '<button class="btn ghost" id="bPw" style="margin-top:14px">Ubah kata sandi</button><p class="lock" style="margin-top:10px">🔐 Mengubah kata sandi perlu kode verifikasi yang dikirim ke Gmail kamu.</p>'}</div>`;
 
-  const mkItems = r.mine.length ? `<div class="mkgrid">${r.mine.map((m, mi) => {
+  const pelajaranItems = r.mine.length ? `<div class="plgrid">${r.mine.map((m, mi) => {
     const d = dec(m);
-    const sub = isD ? (m.kelas.map(k => `<span class="code-pill">${esc(k.nama)} · ${esc(k.kode)}</span>`).join(' ') || '<span class="quote">Belum ada kelas</span>') : `<span class="quote">Pengajar: ${esc(m.dosenNama)}</span>`;
-    return `<div class="mkitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${mkIc(m, d)}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="mkb">${sub}</div></div></div>`;
+    const sub = isD ? (m.kelas.map(k => `<span class="code-pill">${esc(k.nama)} · ${esc(k.kode)}</span>`).join(' ') || '<span class="quote">Belum ada kelas</span>') : `<span class="quote">Pengajar: ${esc(m.pengajarNama)}</span>`;
+    return `<div class="plitem" style="--i:${mi}"><div class="ic" style="background:${d.col}">${pelajaranIc(m, d)}</div><div style="min-width:0"><b>${esc(m.nama)}</b><div class="plb">${sub}</div></div></div>`;
   }).join('')}</div>`
     : `<p class="quote" style="margin:12px 0 0">${isD ? 'Belum ada pelajaran. Buat pelajaran dan kelas di menu Pelajaran.' : 'Belum bergabung ke kelas mana pun. Masukkan kode kelas dari pengajar di menu Pelajaran.'}</p>`;
-  const mkCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="${appHref('/pelajaran')}">Buka pelajaran →</a></div>${mkItems}</div>`;
+  const pelajaranCard = `<div class="card pfull pf-card" style="--i:5"><div class="row" style="justify-content:space-between"><div class="pf-h"><span class="pf-hi">${sxi('type')}</span><b>${isD ? 'Pelajaran yang saya ampu' : 'Pelajaran saya'}</b></div><a class="btn ghost" href="${appHref('/pelajaran')}">Buka pelajaran →</a></div>${pelajaranItems}</div>`;
 
   const hapusCard = `<div class="card danger pfull pf-card" style="--i:6"><div class="row" style="justify-content:space-between;align-items:center"><div style="min-width:0;flex:1 1 260px"><b>Hapus akun permanen</b><p class="quote" style="margin:4px 0 0">Menghapus akun akan menghapus seluruh data milikmu dan tidak bisa dibatalkan.</p></div><button class="btn red" id="bHapus">Hapus akun permanen</button></div></div>`;
 
@@ -2663,7 +2663,7 @@ function render() {
     ${verif}
     ${pendCard}
     <div class="pcols">${dataCard}${kontakCard}${aktivitas}${aman}</div>
-    ${mkCard}${hapusCard}`;
+    ${pelajaranCard}${hapusCard}`;
 
   bind(u);
   if (anim) pfCount();
@@ -2841,12 +2841,12 @@ function bind(u) {
 function dampak(u) {
   const out = ['Akunmu beserta seluruh datamu (nama, kontak, kata sandi) dihapus dan <b>tidak bisa dipulihkan</b>.'];
   if (u.role === 'Pengajar') {
-    const mine = st.mk().filter(m => m.dosen === u.email); let kelas = 0, pert = 0, mhs = 0;
-    mine.forEach(m => { kelas += m.kelas.length; mhs += studentsOf(m.id).length; m.kelas.forEach(k => { pert += k.pert.length; }); });
+    const mine = st.pelajaran().filter(m => m.pengajar === u.email); let kelas = 0, pert = 0, partisipan = 0;
+    mine.forEach(m => { kelas += m.kelas.length; partisipan += studentsOf(m.id).length; m.kelas.forEach(k => { pert += k.pert.length; }); });
     out.push(`<b>${mine.length} pelajaran</b>, <b>${kelas} kelas</b>, dan <b>${pert} pertemuan</b> (materi, tugas, quiz) ikut terhapus.`);
-    out.push(`<b>${mhs} partisipan</b> akan kehilangan kelasnya beserta absen, tugas yang dikirim, nilai, dan hasil quiz mereka.`);
+    out.push(`<b>${partisipan} partisipan</b> akan kehilangan kelasnya beserta absen, tugas yang dikirim, nilai, dan hasil quiz mereka.`);
   } else {
-    const n = st.jn().filter(j => j.mhs === u.email).length;
+    const n = st.jn().filter(j => j.partisipan === u.email).length;
     out.push(`Kamu keluar dari <b>${n} pelajaran</b>; absen, tugas yang dikirim, nilai, dan hasil quiz-mu ikut terhapus.`);
   }
   out.push('Gmail dan ID ini bisa dipakai mendaftar lagi, tetapi data lama tidak akan kembali.');
@@ -2928,7 +2928,7 @@ function startPing() {
     if (!(await loadAll())) { location.replace(pageHref('login')); return; }
     applyPref(); initMobileNav(); fixLinks(); startPing(); startNotif();
     if (PAGE === 'beranda') {
-      U = Auth.session(); isDosen = U.role === 'Pengajar';
+      U = Auth.session(); isPengajar = U.role === 'Pengajar';
       initBeranda();
       document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
       setInterval(() => { if (!document.hidden) refresh(); }, 60000);

@@ -76,8 +76,8 @@
 
   /* ---------- derived ---------- */
   const byEmail = () => { const o = {}; D.users.forEach(u => { o[u.email] = u; }); return o; };
-  const joinsOf = id => D.join.filter(j => j.mk === id);
-  const nPelajaranUser = u => u.role === 'Pengajar' ? D.mk.filter(m => m.dosen === u.email).length : D.join.filter(j => j.mhs === u.email).length;
+  const joinsOf = id => D.join.filter(j => j.pelajaran === id);
+  const nPelajaranUser = u => u.role === 'Pengajar' ? D.pelajaran.filter(m => m.pengajar === u.email).length : D.join.filter(j => j.partisipan === u.email).length;
 
   /* ---------- layar login ---------- */
   function viewLogin(msg) {
@@ -134,7 +134,7 @@
     const nT = D.users.filter(u => u.role === 'Pengajar').length, nS = D.users.filter(u => u.role === 'Partisipan').length;
     const A = D.aktif || { ada: false };
     $('#wrap').innerHTML = `<h2>Ringkasan</h2><p class="lead">Kelola akun, pelajaran, dan kata motivasi KelasBelajar.</p>
-      <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.mk.length, 'Total pelajaran')}${stat('trend', A.ada ? A.h24 : '—', 'Pengunjung 24 jam', 'sv-h24', 'h24')}${stat('pulse', A.ada ? A.online : '—', 'Sedang online', 'sv-on', 'on')}</div>
+      <div class="stats">${stat('users', D.users.length, 'Total akun')}${stat('cap', nT, 'Akun pengajar')}${stat('pack', nS, 'Akun partisipan')}${stat('book', D.pelajaran.length, 'Total pelajaran')}${stat('trend', A.ada ? A.h24 : '—', 'Pengunjung 24 jam', 'sv-h24', 'h24')}${stat('pulse', A.ada ? A.online : '—', 'Sedang online', 'sv-on', 'on')}</div>
       ${A.ada ? '' : `<div class="note" style="margin:-8px 0 18px"><b>Data pengunjung belum aktif.</b> ${esc(A.error || 'Tabel belum tersedia.')}</div>`}
       <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="akun" class="${tab === 'akun' ? 'on' : ''}">${ic('users')} Akun</button><button type="button" role="tab" data-tab="pel" class="${tab === 'pel' ? 'on' : ''}">${ic('book')} Pelajaran</button><button type="button" role="tab" data-tab="mot" class="${tab === 'mot' ? 'on' : ''}">${ic('quote')} Kata motivasi</button><button type="button" role="tab" data-tab="not" class="${tab === 'not' ? 'on' : ''}">${ic('pulse')} Notifikasi<span class="tbb" id="nbAdm" hidden></span></button></div>
       <div id="pane"></div>`;
@@ -157,9 +157,9 @@
   }
   function tabelAkun() {
     const q = qAkun.trim().toLowerCase();
-    const rows = D.users.filter(u => (fRole === 'all' || u.role === fRole) && (!q || [u.nama, u.email, u.hp, u.id, u.prodi].some(v => String(v || '').toLowerCase().includes(q))));
+    const rows = D.users.filter(u => (fRole === 'all' || u.role === fRole) && (!q || [u.nama, u.email, u.hp, u.id, u.minat].some(v => String(v || '').toLowerCase().includes(q))));
     $('#tAk').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Nama</th><th>Peran</th><th>Gmail</th><th>No. HP</th><th>Minat belajar</th><th>Pelajaran</th><th>Terdaftar</th><th></th></tr></thead><tbody>${rows.map(u => `<tr>
-      <td><div class="who">${ava(u)}<div><b>${esc(u.nama)}</b>${dot(u)}<span class="m">ID: ${esc(u.id || '—')}</span></div></div></td><td>${chipRole(u.role)}</td><td>${esc(u.email)}</td><td>${esc(u.hp || '—')}</td><td>${esc(u.prodi || '—')}</td>
+      <td><div class="who">${ava(u)}<div><b>${esc(u.nama)}</b>${dot(u)}<span class="m">ID: ${esc(u.id || '—')}</span></div></div></td><td>${chipRole(u.role)}</td><td>${esc(u.email)}</td><td>${esc(u.hp || '—')}</td><td>${esc(u.minat || '—')}</td>
       <td>${nPelajaranUser(u)}<span class="m">${u.role === 'Pengajar' ? 'dibuat' : 'diikuti'}</span></td><td style="white-space:nowrap">${fmtD(u.dibuat)}</td>
       <td class="act"><button class="btn ghost sm" type="button" data-det="${esc(u.uid)}">${ic('eye')} Detail</button><button class="btn ghost sm" type="button" data-edt="${esc(u.uid)}">${ic('edit')} Ubah</button><button class="btn red sm" type="button" data-del="${esc(u.uid)}" aria-label="Hapus akun ${esc(u.nama)}" title="Hapus akun">${ic('trash')}</button></td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${D.users.length ? 'Tidak ada akun yang cocok dengan pencarian.' : 'Belum ada akun.'}</div>`;
@@ -182,7 +182,7 @@
       <form id="fAk" novalidate><fieldset class="roles"><legend>Peran</legend><label><input type="radio" name="role" value="Partisipan" checked> Partisipan</label><label><input type="radio" name="role" value="Pengajar"> Pengajar</label></fieldset>
       <div class="fg"><label class="f full">Nama lengkap<input id="nNama" maxlength="100" autocomplete="off" required></label>
       <label class="f">ID<input id="nId" maxlength="30" placeholder="tanda pengenal" autocomplete="off" required></label>
-      <label class="f">Minat belajar<input id="nProdi" maxlength="60" placeholder="contoh: teknik informatika" autocomplete="off" required></label>
+      <label class="f">Minat belajar<input id="nMinat" maxlength="60" placeholder="contoh: teknik informatika" autocomplete="off" required></label>
       <label class="f">Gmail<input type="email" id="nEm" placeholder="nama@gmail.com" autocomplete="off" required></label>
       <label class="f">No. HP<input id="nHp" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="off" required></label>
       <label class="f full">Kata sandi (min. 8 karakter)<span class="pw"><input type="password" id="nPw" autocomplete="new-password" required><button type="button" id="nEye" aria-label="Tampilkan kata sandi">${ic('eye')}</button></span></label></div>
@@ -191,10 +191,10 @@
     $('#fAk').onsubmit = async e => {
       e.preventDefault();
       const err = $('#nErr'), go = $('#nGo'); err.textContent = '';
-      const d = { role: $('#fAk input[name=role]:checked').value, nama: $('#nNama').value.trim(), id: $('#nId').value.trim(), prodi: $('#nProdi').value.trim(), email: $('#nEm').value.trim().toLowerCase(), hp: $('#nHp').value.trim(), pass: $('#nPw').value };
+      const d = { role: $('#fAk input[name=role]:checked').value, nama: $('#nNama').value.trim(), id: $('#nId').value.trim(), minat: $('#nMinat').value.trim(), email: $('#nEm').value.trim().toLowerCase(), hp: $('#nHp').value.trim(), pass: $('#nPw').value };
       if (!d.nama) return void (err.textContent = 'Nama lengkap wajib diisi.');
       if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return void (err.textContent = 'ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
-      if (d.prodi.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
+      if (d.minat.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
       if (!/^[a-z0-9._%+-]+@gmail\.com$/i.test(d.email)) return void (err.textContent = 'Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
       if (!/^0\d{8,13}$/.test(d.hp)) return void (err.textContent = 'Nomor HP tidak valid. Contoh: 081234567890.');
       if (d.pass.length < 8) return void (err.textContent = 'Kata sandi minimal 8 karakter.');
@@ -209,14 +209,14 @@
     const u = D.users.find(x => x.uid === uid); if (!u) return;
     let daftar = '';
     if (u.role === 'Pengajar') {
-      const mine = D.mk.filter(m => m.dosen === u.email);
+      const mine = D.pelajaran.filter(m => m.pengajar === u.email);
       daftar = `<div class="sec">Pelajaran yang dibuat (${mine.length})</div>` + (mine.map(m => `<div class="li"><span><b>${esc(m.nama)}</b><div class="m">${m.kelas.length} kelas</div></span><span class="m">${joinsOf(m.id).length} partisipan</span></div>`).join('') || '<div class="m">Belum membuat pelajaran.</div>');
     } else {
-      const ik = D.join.filter(j => j.mhs === u.email);
-      daftar = `<div class="sec">Pelajaran yang diikuti (${ik.length})</div>` + (ik.map(j => { const m = D.mk.find(x => x.id === j.mk), k = m && m.kelas.find(x => x.id === j.kelas); return `<div class="li"><span><b>${esc(m ? m.nama : '(pelajaran dihapus)')}</b><div class="m">Pengajar: ${esc(m ? m.dosenNama || m.dosen : '—')}</div></span><span class="m">${esc(k ? k.nama : '—')}</span></div>`; }).join('') || '<div class="m">Belum bergabung ke pelajaran.</div>');
+      const ik = D.join.filter(j => j.partisipan === u.email);
+      daftar = `<div class="sec">Pelajaran yang diikuti (${ik.length})</div>` + (ik.map(j => { const m = D.pelajaran.find(x => x.id === j.pelajaran), k = m && m.kelas.find(x => x.id === j.kelas); return `<div class="li"><span><b>${esc(m ? m.nama : '(pelajaran dihapus)')}</b><div class="m">Pengajar: ${esc(m ? m.pengajarNama || m.pengajar : '—')}</div></span><span class="m">${esc(k ? k.nama : '—')}</span></div>`; }).join('') || '<div class="m">Belum bergabung ke pelajaran.</div>');
     }
     modal(`<div class="head">${ava(u, 'lg')}<div><h3>${esc(u.nama)}</h3>${chipRole(u.role)}</div></div>
-      <dl class="dl"><dt>Gmail</dt><dd>${esc(u.email)}</dd><dt>No. HP</dt><dd>${esc(u.hp || '—')}</dd><dt>ID</dt><dd>${esc(u.id || '—')}</dd><dt>Minat belajar</dt><dd>${esc(u.prodi || '—')}</dd>
+      <dl class="dl"><dt>Gmail</dt><dd>${esc(u.email)}</dd><dt>No. HP</dt><dd>${esc(u.hp || '—')}</dd><dt>ID</dt><dd>${esc(u.id || '—')}</dd><dt>Minat belajar</dt><dd>${esc(u.minat || '—')}</dd>
       <dt>Terdaftar</dt><dd>${fmtDT(u.dibuat).replace('Belum pernah', '—')}</dd><dt>Terakhir masuk</dt><dd>${fmtDT(u.last)}</dd><dt>Aktivitas</dt><dd>${!D.aktif || !D.aktif.ada ? '—' : isOn(u) ? '<span class="chip ok">Sedang online</span>' : esc(seenOf(u) ? 'Terakhir aktif ' + rel(seenOf(u)) : 'Belum tercatat')}</dd>
       <dt>Verifikasi Gmail</dt><dd>${u.verified == null ? '—' : u.verified ? '<span class="chip ok">Terverifikasi</span>' : '<span class="chip no">Belum</span>'}</dd><dt>UID</dt><dd style="font-size:12px;color:var(--mu)">${esc(u.uid)}</dd></dl>
       ${daftar}<div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="dTut">Tutup</button><button class="btn lime" type="button" id="dEdt">${ic('edit')} Ubah</button><button class="btn red" type="button" id="dDel">${ic('trash')} Hapus akun</button></div>`, true);
@@ -225,11 +225,11 @@
 
   function formUbah(uid) {
     const u = D.users.find(x => x.uid === uid); if (!u) return;
-    const mine = D.mk.filter(m => m.dosen === u.email).length, ikut = D.join.filter(j => j.mhs === u.email).length;
+    const mine = D.pelajaran.filter(m => m.pengajar === u.email).length, ikut = D.join.filter(j => j.partisipan === u.email).length;
     modal(`<h3>Ubah akun</h3><p class="sub">${esc(u.nama)} · ${esc(u.email)}</p>
       <form id="fUb" novalidate><fieldset class="roles"><legend>Peran</legend><label><input type="radio" name="role" value="Partisipan"${u.role === 'Partisipan' ? ' checked' : ''}> Partisipan</label><label><input type="radio" name="role" value="Pengajar"${u.role === 'Pengajar' ? ' checked' : ''}> Pengajar</label></fieldset>
       <div class="fg"><label class="f">ID<input id="uId" maxlength="30" value="${esc(u.id || '')}" autocomplete="off" required></label>
-      <label class="f">Minat belajar<input id="uProdi" maxlength="60" value="${esc(u.prodi || '')}" autocomplete="off" required></label></div>
+      <label class="f">Minat belajar<input id="uMinat" maxlength="60" value="${esc(u.minat || '')}" autocomplete="off" required></label></div>
       <div class="warn" id="uWarn" hidden></div><p class="err" id="uErr" role="alert"></p>
       <div class="btns"><button class="btn ghost" type="button" id="uBatal">Batal</button><button class="btn lime" type="submit" id="uGo">Simpan perubahan</button></div></form>`);
     $('#uBatal').onclick = closeModal;
@@ -246,9 +246,9 @@
     $('#fUb').onsubmit = async e => {
       e.preventDefault();
       const err = $('#uErr'), go = $('#uGo'); err.textContent = '';
-      const d = { uid, role: roleNow(), id: $('#uId').value.trim(), prodi: $('#uProdi').value.trim() };
+      const d = { uid, role: roleNow(), id: $('#uId').value.trim(), minat: $('#uMinat').value.trim() };
       if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) return void (err.textContent = 'ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
-      if (d.prodi.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
+      if (d.minat.length < 3) return void (err.textContent = 'Minat belajar wajib diisi (minimal 3 karakter).');
       go.disabled = true; go.textContent = 'Menyimpan…';
       try { await api('akun_ubah', d); closeModal(); await muatTenang(); toast('Akun ' + u.nama + ' diperbarui'); }
       catch (x) { err.textContent = x.message; go.disabled = false; go.textContent = 'Simpan perubahan'; }
@@ -269,10 +269,10 @@
     const u = D.users.find(x => x.uid === uid); if (!u) return;
     const dampak = [];
     if (u.role === 'Pengajar') {
-      const mine = D.mk.filter(m => m.dosen === u.email), nk = mine.reduce((a, m) => a + m.kelas.length, 0), np = new Set(mine.flatMap(m => joinsOf(m.id).map(j => j.mhs))).size;
+      const mine = D.pelajaran.filter(m => m.pengajar === u.email), nk = mine.reduce((a, m) => a + m.kelas.length, 0), np = new Set(mine.flatMap(m => joinsOf(m.id).map(j => j.partisipan))).size;
       dampak.push(`<b>${mine.length} pelajaran</b> dan <b>${nk} kelas</b> miliknya ikut terhapus (materi, tugas, quiz).`, `<b>${np} partisipan</b> kehilangan kelas tersebut beserta absen, tugas, nilai, dan hasil quiz mereka.`);
     } else {
-      dampak.push(`Dikeluarkan dari <b>${D.join.filter(j => j.mhs === u.email).length} pelajaran</b>; absen, tugas, nilai, dan hasil quiz-nya ikut terhapus.`);
+      dampak.push(`Dikeluarkan dari <b>${D.join.filter(j => j.partisipan === u.email).length} pelajaran</b>; absen, tugas, nilai, dan hasil quiz-nya ikut terhapus.`);
     }
     dampak.push('Akun, profil, dan foto dihapus <b>permanen</b> dan tidak bisa dipulihkan.');
     modal(`<h3>Hapus akun ${esc(u.nama)}?</h3><p class="sub">${esc(u.email)} · ${esc(u.role)}</p><div class="warn"><b>Tindakan ini tidak bisa dibatalkan.</b><ul>${dampak.map(t => `<li>${t}</li>`).join('')}</ul></div>
@@ -295,30 +295,30 @@
   }
   function tabelPel() {
     const q = qPel.trim().toLowerCase(), em = byEmail();
-    const rows = D.mk.filter(m => !q || [m.nama, m.kode, m.dosenNama, m.dosen].some(v => String(v || '').toLowerCase().includes(q)));
-    $('#tPl').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Pelajaran</th><th>Pengajar</th><th>Kelas</th><th>Partisipan</th><th></th></tr></thead><tbody>${rows.map(m => { const t = em[m.dosen]; return `<tr>
-      <td><b>${esc(m.nama)}</b>${m.kode ? `<span class="m">Kode: ${esc(m.kode)}</span>` : ''}</td><td>${esc(t ? t.nama : m.dosenNama || '—')}<span class="m">${esc(m.dosen)}</span></td>
+    const rows = D.pelajaran.filter(m => !q || [m.nama, m.kode, m.pengajarNama, m.pengajar].some(v => String(v || '').toLowerCase().includes(q)));
+    $('#tPl').innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>Pelajaran</th><th>Pengajar</th><th>Kelas</th><th>Partisipan</th><th></th></tr></thead><tbody>${rows.map(m => { const t = em[m.pengajar]; return `<tr>
+      <td><b>${esc(m.nama)}</b>${m.kode ? `<span class="m">Kode: ${esc(m.kode)}</span>` : ''}</td><td>${esc(t ? t.nama : m.pengajarNama || '—')}<span class="m">${esc(m.pengajar)}</span></td>
       <td>${m.kelas.length}${m.kelas.length ? `<span class="m">${esc(m.kelas.map(k => k.nama).join(', '))}</span>` : ''}</td><td>${joinsOf(m.id).length}</td>
       <td class="act"><button class="btn ghost sm" type="button" data-ang="${esc(m.id)}">${ic('users')} Anggota</button><button class="btn red sm" type="button" data-hp="${esc(m.id)}" aria-label="Hapus pelajaran ${esc(m.nama)}">${ic('trash')} Hapus</button></td></tr>`; }).join('')}</tbody></table></div>`
-      : `<div class="empty">${D.mk.length ? 'Tidak ada pelajaran yang cocok.' : 'Belum ada pelajaran yang dibuat pengajar.'}</div>`;
+      : `<div class="empty">${D.pelajaran.length ? 'Tidak ada pelajaran yang cocok.' : 'Belum ada pelajaran yang dibuat pengajar.'}</div>`;
     $('#tPl').querySelectorAll('[data-ang]').forEach(b => { b.onclick = () => anggota(b.dataset.ang); });
     $('#tPl').querySelectorAll('[data-hp]').forEach(b => { b.onclick = () => hapusPel(b.dataset.hp); });
   }
   function anggota(id) {
-    const m = D.mk.find(x => x.id === id); if (!m) return;
+    const m = D.pelajaran.find(x => x.id === id); if (!m) return;
     const em = byEmail(), js = joinsOf(id), known = new Set(m.kelas.map(k => k.id));
     const grup = m.kelas.map(k => ({ k, rows: js.filter(j => j.kelas === k.id) }));
     const lain = js.filter(j => !known.has(j.kelas)); if (lain.length) grup.push({ k: { nama: 'Tanpa kelas', kode: '' }, rows: lain });
-    const tbl = rows => rows.length ? `<div class="tw"><table style="min-width:520px"><thead><tr><th>Nama</th><th>Gmail</th><th>No. HP</th><th>ID</th></tr></thead><tbody>${rows.map(j => { const u = em[j.mhs]; return `<tr><td>${u ? `<div class="who" style="min-width:0">${ava(u)}<b>${esc(u.nama)}</b></div>` : '<i>(akun dihapus)</i>'}</td><td>${esc(j.mhs)}</td><td>${esc(u ? u.hp || '—' : '—')}</td><td>${esc(u ? u.id || '—' : '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="m" style="padding:4px 2px">Belum ada partisipan di kelas ini.</div>';
-    modal(`<h3>Anggota: ${esc(m.nama)}</h3><p class="sub">Pengajar: ${esc(m.dosenNama || m.dosen)} · ${js.length} partisipan di ${m.kelas.length} kelas</p>
+    const tbl = rows => rows.length ? `<div class="tw"><table style="min-width:520px"><thead><tr><th>Nama</th><th>Gmail</th><th>No. HP</th><th>ID</th></tr></thead><tbody>${rows.map(j => { const u = em[j.partisipan]; return `<tr><td>${u ? `<div class="who" style="min-width:0">${ava(u)}<b>${esc(u.nama)}</b></div>` : '<i>(akun dihapus)</i>'}</td><td>${esc(j.partisipan)}</td><td>${esc(u ? u.hp || '—' : '—')}</td><td>${esc(u ? u.id || '—' : '—')}</td></tr>`; }).join('')}</tbody></table></div>` : '<div class="m" style="padding:4px 2px">Belum ada partisipan di kelas ini.</div>';
+    modal(`<h3>Anggota: ${esc(m.nama)}</h3><p class="sub">Pengajar: ${esc(m.pengajarNama || m.pengajar)} · ${js.length} partisipan di ${m.kelas.length} kelas</p>
       ${grup.length ? grup.map(g => `<div class="kh">${esc(g.k.nama)} ${g.k.kode ? `<span class="chip s">${esc(g.k.kode)}</span>` : ''}<span class="m">${g.rows.length} partisipan</span></div>${tbl(g.rows)}`).join('') : '<div class="m">Pelajaran ini belum punya kelas.</div>'}
       <div class="btns" style="margin-top:16px"><button class="btn ghost" type="button" id="aTut">Tutup</button></div>`, true);
     $('#aTut').onclick = closeModal;
   }
   function hapusPel(id) {
-    const m = D.mk.find(x => x.id === id); if (!m) return;
+    const m = D.pelajaran.find(x => x.id === id); if (!m) return;
     const n = joinsOf(id).length;
-    modal(`<h3>Hapus pelajaran “${esc(m.nama)}”?</h3><p class="sub">Dibuat oleh ${esc(m.dosenNama || m.dosen)}</p><div class="warn"><b>Tindakan ini tidak bisa dibatalkan.</b><ul><li><b>${m.kelas.length} kelas</b> beserta seluruh pertemuan, materi, tugas, dan quiz terhapus.</li><li><b>${n} partisipan</b> keluar dari pelajaran ini; absen, tugas, nilai, dan hasil quiz mereka ikut terhapus.</li></ul></div>
+    modal(`<h3>Hapus pelajaran “${esc(m.nama)}”?</h3><p class="sub">Dibuat oleh ${esc(m.pengajarNama || m.pengajar)}</p><div class="warn"><b>Tindakan ini tidak bisa dibatalkan.</b><ul><li><b>${m.kelas.length} kelas</b> beserta seluruh pertemuan, materi, tugas, dan quiz terhapus.</li><li><b>${n} partisipan</b> keluar dari pelajaran ini; absen, tugas, nilai, dan hasil quiz mereka ikut terhapus.</li></ul></div>
       <label class="f" style="margin-top:14px">Ketik <b>HAPUS</b> untuk melanjutkan<input id="kH" autocomplete="off"></label><p class="err" id="kErr" role="alert"></p>
       <div class="btns"><button class="btn ghost" type="button" id="kBatal">Batal</button><button class="btn red" type="button" id="kOk">${ic('trash')} Hapus pelajaran</button></div>`);
     $('#kBatal').onclick = closeModal; $('#kH').focus();

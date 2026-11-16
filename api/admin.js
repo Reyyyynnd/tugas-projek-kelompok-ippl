@@ -11,7 +11,7 @@
    ===================================================================== */
 const crypto = require('crypto');
 
-const SB_URL = () => String(process.env.SUPABASE_URL || 'https://absfiaukhpovsrmkzbdp.supabase.co').replace(/\/+$/, '');
+const SB_URL = () => String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://fwegzvgibstytjothqsb.supabase.co').replace(/\/+$/, '');
 const cfg = () => {
   const SRK = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   // kunci penanda tangan token diturunkan dari service role key (tidak perlu env tambahan)
@@ -86,19 +86,19 @@ async function authInfo() {
 
 /* ---------- validasi (sama dengan form daftar di website) ---------- */
 const isGmail = v => /^[a-z0-9._%+-]+@gmail\.com$/i.test(String(v || '').trim());
-const MKID = /^[A-Za-z0-9_-]{1,64}$/;
+const PELAJARANID = /^[A-Za-z0-9_-]{1,64}$/;
 const bad = msg => { const e = new Error(msg); e.status = 400; e.user = true; return e; };
 
 function cekAkun(b) {
   const d = {
     nama: String(b.nama || '').trim(), role: String(b.role || ''), id: String(b.id || '').trim(),
-    prodi: String(b.prodi || '').trim(), email: String(b.email || '').trim().toLowerCase(),
+    minat: String(b.minat || '').trim(), email: String(b.email || '').trim().toLowerCase(),
     hp: String(b.hp || '').trim(), pass: String(b.pass || '')
   };
   if (!['Partisipan', 'Pengajar'].includes(d.role)) throw bad('Peran harus Partisipan atau Pengajar.');
   if (!d.nama || d.nama.length > 100) throw bad('Nama lengkap wajib diisi (maks. 100 karakter).');
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(d.id)) throw bad('ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
-  if (d.prodi.length < 3 || d.prodi.length > 60) throw bad('Minat belajar wajib diisi (3–60 karakter).');
+  if (d.minat.length < 3 || d.minat.length > 60) throw bad('Minat belajar wajib diisi (3–60 karakter).');
   if (!isGmail(d.email)) throw bad('Gunakan alamat Gmail yang valid (akhiran @gmail.com).');
   if (!/^0\d{8,13}$/.test(d.hp)) throw bad('Nomor HP tidak valid. Contoh: 081234567890.');
   if (d.pass.length < 8 || d.pass.length > 72) throw bad('Kata sandi 8–72 karakter.');
@@ -129,30 +129,30 @@ async function aksiAktif() {
 
 /* ---------- aksi ---------- */
 async function aksiData() {
-  const [pr, mk, jn, au] = await Promise.all([
-    restAll('profiles', 'select=uid,email,nama,role,id_user,hp,prodi,dibuat,pref&order=dibuat.asc'),
-    restAll('mk', 'select=id,dosen,data&order=id.asc'),
-    restAll('bergabung', 'select=mk_id,mhs,kelas_id,waktu&order=mk_id.asc'),
+  const [pr, pelajaran, jn, au] = await Promise.all([
+    restAll('profiles', 'select=uid,email,nama,role,id_user,hp,minat,dibuat,pref&order=dibuat.asc'),
+    restAll('pelajaran', 'select=id,pengajar,data&order=id.asc'),
+    restAll('bergabung', 'select=pelajaran_id,partisipan,kelas_id,waktu&order=pelajaran_id.asc'),
     authInfo()
   ]);
   const users = pr.map(r => ({
-    uid: r.uid, email: r.email, nama: r.nama, role: r.role, id: r.id_user, hp: r.hp, prodi: r.prodi, dibuat: r.dibuat || null,
+    uid: r.uid, email: r.email, nama: r.nama, role: r.role, id: r.id_user, hp: r.hp, minat: r.minat, dibuat: r.dibuat || null,
     foto: r.pref && typeof r.pref.foto === 'string' && /^https?:\/\//.test(r.pref.foto) ? r.pref.foto : '',
     last: au[r.uid] ? au[r.uid].last : null, verified: au[r.uid] ? au[r.uid].verified : null
   }));
-  const pel = mk.map(m => {
+  const pel = pelajaran.map(m => {
     const d = m.data || {};
     return {
-      id: m.id, dosen: m.dosen, nama: d.nama || '(tanpa nama)', kode: d.kode || '', dosenNama: d.dosenNama || '',
+      id: m.id, pengajar: m.pengajar, nama: d.nama || '(tanpa nama)', kode: d.kode || '', pengajarNama: d.pengajarNama || '',
       kelas: (d.kelas || []).map(k => ({ id: k.id, nama: k.nama, kode: k.kode, pert: (k.pert || []).length }))
     };
   });
-  const join = jn.map(j => ({ mk: j.mk_id, mhs: j.mhs, kelas: j.kelas_id }));
+  const join = jn.map(j => ({ pelajaran: j.pelajaran_id, partisipan: j.partisipan, kelas: j.kelas_id }));
   let quotes = null, quotesError = '';
   try { quotes = await restAll('motivasi', 'select=id,teks&order=id.asc'); }
   catch (e) { quotesError = e.status === 404 || /motivasi|schema cache|relation/i.test(e.message) ? 'Tabel "motivasi" belum dibuat. Jalankan file supabase-admin.sql di Supabase SQL Editor.' : e.message; }
   const { aktif, notifBelum: nb } = await aksiAktif();
-  return { users, mk: pel, join, quotes, quotesError, aktif, notifBelum: nb };
+  return { users, pelajaran: pel, join, quotes, quotesError, aktif, notifBelum: nb };
 }
 
 async function aksiBuatAkun(b) {
@@ -165,7 +165,7 @@ async function aksiBuatAkun(b) {
   try {
     u = await sbFetch('/auth/v1/admin/users', {
       method: 'POST',
-      body: { email: d.email, password: d.pass, email_confirm: true, user_metadata: { nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, prodi: d.prodi } }
+      body: { email: d.email, password: d.pass, email_confirm: true, user_metadata: { nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, minat: d.minat } }
     });
   } catch (e) {
     if (/already|registered|exists/i.test(e.message)) throw bad('Gmail ini sudah terdaftar.');
@@ -175,7 +175,7 @@ async function aksiBuatAkun(b) {
   const uid = u && (u.id || (u.user && u.user.id));
   const ada = await rest(`profiles?uid=eq.${enc(uid)}&select=uid&limit=1`);
   if (!ada.length) {
-    await rest('profiles', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { uid, email: d.email, nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, prodi: d.prodi } });
+    await rest('profiles', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { uid, email: d.email, nama: d.nama, role: d.role, id_user: d.id, hp: d.hp, minat: d.minat } });
   }
   return { ok: true, uid };
 }
@@ -183,10 +183,10 @@ async function aksiBuatAkun(b) {
 async function aksiUbahAkun(b) {
   const uid = String(b.uid || '');
   if (!UUID.test(uid)) throw bad('ID akun tidak valid.');
-  const role = String(b.role || ''), id = String(b.id || '').trim(), prodi = String(b.prodi || '').trim();
+  const role = String(b.role || ''), id = String(b.id || '').trim(), minat = String(b.minat || '').trim();
   if (!['Partisipan', 'Pengajar'].includes(role)) throw bad('Peran harus Partisipan atau Pengajar.');
   if (!/^[A-Za-z0-9._-]{3,30}$/.test(id)) throw bad('ID harus 3–30 karakter: huruf, angka, titik, strip, atau garis bawah (tanpa spasi).');
-  if (prodi.length < 3 || prodi.length > 60) throw bad('Minat belajar wajib diisi (3–60 karakter).');
+  if (minat.length < 3 || minat.length > 60) throw bad('Minat belajar wajib diisi (3–60 karakter).');
   const prof = (await rest(`profiles?uid=eq.${enc(uid)}&select=uid,email,role,id_user&limit=1`))[0];
   if (!prof) throw bad('Akun tidak ditemukan.');
   if (id !== prof.id_user) {
@@ -196,39 +196,39 @@ async function aksiUbahAkun(b) {
   let keluar = 0;
   if (role !== prof.role) {
     if (prof.role === 'Pengajar') {
-      const n = (await rest(`mk?dosen=eq.${enc(prof.email)}&select=id`)).length;
+      const n = (await rest(`pelajaran?pengajar=eq.${enc(prof.email)}&select=id`)).length;
       if (n) throw bad(`Pengajar ini masih punya ${n} pelajaran. Hapus pelajarannya dulu di tab Pelajaran sebelum mengubah perannya menjadi Partisipan.`);
     } else {
-      keluar = (await rest(`bergabung?mhs=eq.${enc(prof.email)}&select=mk_id`)).length;
+      keluar = (await rest(`bergabung?partisipan=eq.${enc(prof.email)}&select=pelajaran_id`)).length;
       await rest(`progres?email=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-      await rest(`bergabung?mhs=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      await rest(`bergabung?partisipan=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
     }
   }
-  try { await rest(`profiles?uid=eq.${enc(uid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { role, id_user: id, prodi } }); }
+  try { await rest(`profiles?uid=eq.${enc(uid)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: { role, id_user: id, minat } }); }
   catch (e) { if (e.code === '23505') throw bad('ID ini sudah dipakai akun lain.'); throw e; }
   try { // samakan data bawaan akun login (tidak wajib)
     const cur = await sbFetch(`/auth/v1/admin/users/${enc(uid)}`);
-    await sbFetch(`/auth/v1/admin/users/${enc(uid)}`, { method: 'PUT', body: { user_metadata: { ...((cur && cur.user_metadata) || {}), role, id_user: id, prodi } } });
+    await sbFetch(`/auth/v1/admin/users/${enc(uid)}`, { method: 'PUT', body: { user_metadata: { ...((cur && cur.user_metadata) || {}), role, id_user: id, minat } } });
   } catch (e) { /* abaikan */ }
   return { ok: true, keluar };
 }
 
-async function kabarkanHapusMk(ids, alasan) {
+async function kabarkanHapusPelajaran(ids, alasan) {
   try {
     if (!ids.length) return;
-    const mks = await rest(`mk?id=${enc(inList(ids))}&select=id,dosen,data`);
+    const daftarPelajaran = await rest(`pelajaran?id=${enc(inList(ids))}&select=id,pengajar,data`);
     const rows = [];
-    const emails = new Set(mks.map(m => String(m.dosen || '').toLowerCase()));
-    const joins = await rest(`bergabung?mk_id=${enc(inList(ids))}&select=mk_id,mhs`);
-    joins.forEach(j => emails.add(String(j.mhs || '').toLowerCase()));
+    const emails = new Set(daftarPelajaran.map(m => String(m.pengajar || '').toLowerCase()));
+    const joins = await rest(`bergabung?pelajaran_id=${enc(inList(ids))}&select=pelajaran_id,partisipan`);
+    joins.forEach(j => emails.add(String(j.partisipan || '').toLowerCase()));
     if (!emails.size) return;
     const prof = await rest(`profiles?email=${enc(inList([...emails]))}&select=uid,email`);
     const uidOf = {}; prof.forEach(p => { uidOf[String(p.email).toLowerCase()] = p.uid; });
-    mks.forEach(m => {
+    daftarPelajaran.forEach(m => {
       const nama = (m.data && m.data.nama) || 'Pelajaran';
-      const dos = uidOf[String(m.dosen || '').toLowerCase()];
+      const dos = uidOf[String(m.pengajar || '').toLowerCase()];
       if (dos) rows.push({ untuk: dos, jenis: 'pelajaran', judul: 'Pelajaran dihapus oleh admin', isi: `${nama} dihapus oleh admin${alasan ? ' (' + alasan + ')' : ''}.`, tautan: 'pelajaran' });
-      joins.filter(j => j.mk_id === m.id).forEach(j => { const u = uidOf[String(j.mhs || '').toLowerCase()]; if (u) rows.push({ untuk: u, jenis: 'pelajaran', judul: 'Pelajaran dihapus oleh admin', isi: `${nama} dihapus oleh admin${alasan ? ' (' + alasan + ')' : ''}.`, tautan: 'pelajaran' }); });
+      joins.filter(j => j.pelajaran_id === m.id).forEach(j => { const u = uidOf[String(j.partisipan || '').toLowerCase()]; if (u) rows.push({ untuk: u, jenis: 'pelajaran', judul: 'Pelajaran dihapus oleh admin', isi: `${nama} dihapus oleh admin${alasan ? ' (' + alasan + ')' : ''}.`, tautan: 'pelajaran' }); });
     });
     if (rows.length) await rest('notifikasi', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: rows });
   } catch (e) { /* notifikasi bersifat tambahan */ }
@@ -241,13 +241,13 @@ async function aksiHapusAkun(b) {
   let pelajaran = 0;
   if (prof) {
     if (prof.role === 'Pengajar') {
-      const ids = (await rest(`mk?dosen=eq.${enc(prof.email)}&select=id`)).map(m => m.id);
+      const ids = (await rest(`pelajaran?pengajar=eq.${enc(prof.email)}&select=id`)).map(m => m.id);
       pelajaran = ids.length;
-      if (ids.length) await kabarkanHapusMk(ids, 'akun pengajar dihapus');
-      if (ids.length) { await delIn('progres', 'mk_id', ids); await delIn('bergabung', 'mk_id', ids); await delIn('mk', 'id', ids); }
+      if (ids.length) await kabarkanHapusPelajaran(ids, 'akun pengajar dihapus');
+      if (ids.length) { await delIn('progres', 'pelajaran_id', ids); await delIn('bergabung', 'pelajaran_id', ids); await delIn('pelajaran', 'id', ids); }
     }
     await rest(`progres?email=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-    await rest(`bergabung?mhs=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    await rest(`bergabung?partisipan=eq.${enc(prof.email)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
     await rest(`profiles?uid=eq.${enc(uid)}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   }
   try { await sbFetch(`/storage/v1/object/foto/${uid}/avatar.jpg`, { method: 'DELETE' }); } catch (e) { /* foto mungkin tidak ada */ }
@@ -258,11 +258,11 @@ async function aksiHapusAkun(b) {
 
 async function aksiHapusPelajaran(b) {
   const id = String(b.id || '');
-  if (!MKID.test(id)) throw bad('ID pelajaran tidak valid.');
-  await kabarkanHapusMk([id], '');
-  await delIn('progres', 'mk_id', [id]);
-  await delIn('bergabung', 'mk_id', [id]);
-  await delIn('mk', 'id', [id]);
+  if (!PELAJARANID.test(id)) throw bad('ID pelajaran tidak valid.');
+  await kabarkanHapusPelajaran([id], '');
+  await delIn('progres', 'pelajaran_id', [id]);
+  await delIn('bergabung', 'pelajaran_id', [id]);
+  await delIn('pelajaran', 'id', [id]);
   return { ok: true };
 }
 

@@ -168,9 +168,9 @@ label.f code{background:#edf0ee;padding:1px 6px;border-radius:5px;font-size:12px
 .tile{background:#f7faf8;border-radius:11px;padding:12px 8px;text-align:center}
 .tile b{display:block;font-size:21px;font-weight:800;line-height:1.2}
 .tile span{display:block;font-size:11.5px;color:var(--mu);line-height:1.3;margin-top:3px}
-.mkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:12px}
-.mkitem{display:flex;gap:11px;align-items:center;border:1px solid var(--bd);border-radius:11px;padding:11px 13px}
-.mkb{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.plgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:12px}
+.plitem{display:flex;gap:11px;align-items:center;border:1px solid var(--bd);border-radius:11px;padding:11px 13px}
+.plb{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 a.btn{display:inline-block;text-decoration:none}
 .pcols{align-items:stretch}
 .pcols>.card{height:100%}
@@ -998,14 +998,14 @@ body[data-page="profil"] .meTop,body.me-off .meTop{display:none}
 .pf-card .tile{border:1px solid transparent;transition:transform .2s,background .2s,border-color .2s}
 .pf-card .tile:hover{transform:translateY(-3px);background:var(--limeS);border-color:#d7ec9a}
 .pf-card .tile b{font-variant-numeric:tabular-nums}
-.mkitem{transition:transform .2s,border-color .2s,box-shadow .2s}
-.mkitem:hover{transform:translateX(4px);border-color:var(--g7);box-shadow:0 6px 16px #0c2a1f14}
-.mkitem .ic{transition:transform .3s}
-.mkitem:hover .ic{transform:rotate(-8deg) scale(1.1)}
+.plitem{transition:transform .2s,border-color .2s,box-shadow .2s}
+.plitem:hover{transform:translateX(4px);border-color:var(--g7);box-shadow:0 6px 16px #0c2a1f14}
+.plitem .ic{transition:transform .3s}
+.plitem:hover .ic{transform:rotate(-8deg) scale(1.1)}
 
 .pf-in .pf-card{animation:pfRise .6s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(.15s + var(--i,0)*.09s)}
 .pf-in .pf-card .tile{animation:pfPop .5s cubic-bezier(.2,1.2,.4,1) backwards;animation-delay:calc(.45s + var(--i,0)*.07s)}
-.pf-in .mkitem{animation:pfRise .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(.6s + var(--i,0)*.06s)}
+.pf-in .plitem{animation:pfRise .5s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:calc(.6s + var(--i,0)*.06s)}
 
 @keyframes pfRise{from{opacity:0;transform:translateY(16px)}}
 @keyframes pfPop{from{opacity:0;transform:scale(.6)}}
@@ -1068,10 +1068,10 @@ html.sb-min aside{width:76px;padding-left:12px;padding-right:12px}
 
 .av{overflow:hidden}
 .av img{width:100%;height:100%;object-fit:cover;display:block}
-.mk-ph{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
-.pc-ic,.hv-ic,.prg-ic,.ic:has(>.mk-ph){overflow:hidden}
-.pc-ic:has(>.mk-ph){padding:3px;background:#fff}
-.pc-ic>.mk-ph{border-radius:13px}
+.pl-ph{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+.pc-ic,.hv-ic,.prg-ic,.ic:has(>.pl-ph){overflow:hidden}
+.pc-ic:has(>.pl-ph){padding:3px;background:#fff}
+.pc-ic>.pl-ph{border-radius:13px}
 .pfk-av{border:0;padding:0;cursor:pointer;overflow:hidden;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .pfk-av:hover{transform:scale(1.05);box-shadow:inset 0 -6px 0 #0c2a1f12,0 8px 20px #0c2a1f33}
 .pfk-av img{width:100%;height:100%;object-fit:cover;display:block}
@@ -1243,7 +1243,7 @@ html.sb-min .logo{padding-bottom:14px}
 .mbtn{display:none}
 
 .eic{width:1.12em;height:1.12em;vertical-align:-.2em;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
-.pc-ic,.prg-ic,.ic,.jd-ic,.addic,.mkitem .ic{color:var(--g7)}
+.pc-ic,.prg-ic,.ic,.jd-ic,.addic,.plitem .ic{color:var(--g7)}
 .hv-ic{color:#fff}
 .hv-ic .eic,.pc-ic .eic,.prg-ic .eic,.jd-ic .eic{stroke-width:1.9}
 .big-ic{width:76px;height:76px;margin:0 auto 8px;border-radius:50%;background:var(--limeS);color:var(--g7);display:grid;place-items:center;font-size:34px}
