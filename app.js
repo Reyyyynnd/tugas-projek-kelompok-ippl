@@ -338,7 +338,7 @@ function setMe(u) {
   g('meSub').innerHTML = `<span class="idtxt">ID ${esc(u.id)}</span><span class="rolechip ${u.role === 'Pengajar' ? 'pg' : 'pt'}">${esc(u.role)}</span>`;
   initTop(u);
 }
-const KONTAK = { email: 'reynanda.p08@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
+const KONTAK = { email: 'kelasbelajar.v0@gmail.com', wa: '089529235484', waIntl: '6289529235484' };
 function footerHtml() {
   const tur = PAGE === 'beranda' ? `<button class="fl" onclick="startTour()">📖 Panduan penggunaan</button>` : `<a class="fl" href="${HIST ? '/beranda#tour' : 'index.html#tour'}">📖 Panduan penggunaan</a>`;
   return `<div class="fwrap">
